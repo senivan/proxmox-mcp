@@ -320,7 +320,7 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
             try:
                 self.connection.settimeout(self.IDLE_CONNECTION_TIMEOUT_SECONDS)
             except Exception:  # noqa: BLE001
-                LOG.warning("failed to set idle timeout on connection")
+                LOG.warning("failed to set idle timeout on connection", exc_info=True)
 
         def _send_json(self, status: HTTPStatus, payload: dict[str, Any] | None) -> None:
             body = b""
