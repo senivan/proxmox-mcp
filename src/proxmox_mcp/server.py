@@ -113,6 +113,24 @@ def handle_mcp_post(
                 },
             )
 
+        if method == "notifications/initialized":
+            audit_logger.write(
+                event="mcp_request",
+                method=method,
+                tool_name=None,
+                kind="read",
+                outcome="allowed",
+                **audit_kwargs,
+            )
+            return (
+                HTTPStatus.OK,
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {},
+                },
+            )
+
         if method == "tools/list":
             audit_logger.write(
                 event="mcp_request",
@@ -299,11 +317,13 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "ProxmoxMCP/0.1"
+        protocol_version = "HTTP/1.1"
 
         def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
             body = json.dumps(payload).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Connection", "keep-alive")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
