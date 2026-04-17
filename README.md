@@ -44,45 +44,7 @@ tests/
 
 1. Create a config:
 
-```toml
-[server]
-host = "127.0.0.1"
-port = 8080
-
-[tls]
-enabled = false
-cert_file = "./tls/server.crt"
-key_file = "./tls/server.key"
-client_ca_file = "./tls/ca.crt"
-require_client_cert = false
-
-[remote]
-mode = "allow-listed"
-approval_store = "./state/approvals.json"
-
-[audit]
-file = "./state/audit.jsonl"
-
-[proxmox]
-base_url = "https://127.0.0.1:8006/api2/json"
-token_id = "mcp@pam!default"
-token_secret = "replace-me"
-verify_tls = false
-
-[profiles.readonly]
-capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read"]
-
-[profiles.operator]
-capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.power"]
-
-[clients.ops_laptop]
-token = "replace-me"
-profile = "readonly"
-
-[clients.ops_console]
-token = "replace-me-too"
-profile = "operator"
-```
+Use [config.toml](/Users/ivansen/proxmox-mcp-server/examples/config.toml) as the starting point.
 
 2. Allow a client:
 
@@ -104,6 +66,9 @@ proxmox-mcpctl --config ./config.toml mode allow-listed
 proxmox-mcpctl --config ./config.toml approve ops-laptop --ttl 30m
 proxmox-mcpctl --config ./config.toml revoke ops-laptop
 proxmox-mcpctl --config ./config.toml list
+proxmox-mcpctl --config ./config.toml validate-config
+proxmox-mcpctl --config ./config.toml show-mode
+proxmox-mcpctl --config ./config.toml show-clients
 ```
 
 ## CI
@@ -115,6 +80,55 @@ manual dispatch. The current suite is intentionally small and deterministic:
 - `python -m unittest discover -s tests -v`
 
 This keeps CI aligned with the checks used during local development.
+
+## Deployment
+
+Target layout on the Proxmox host:
+
+- application: `/opt/proxmox-mcp-server`
+- config: `/etc/proxmox-mcp/config.toml`
+- TLS: `/etc/proxmox-mcp/tls/`
+- SSH fallback material: `/etc/proxmox-mcp/ssh/`
+- mutable state: `/var/lib/proxmox-mcp/`
+- systemd unit: `/etc/systemd/system/proxmox-mcp.service`
+
+Install from a checked-out repo on the host:
+
+```bash
+sudo ./deploy/install.sh
+```
+
+After install:
+
+1. Edit `/etc/proxmox-mcp/config.toml`
+2. Place TLS cert/key files in `/etc/proxmox-mcp/tls/`
+3. Validate the config:
+
+```bash
+sudo /opt/proxmox-mcp-server/.venv/bin/proxmox-mcpctl --config /etc/proxmox-mcp/config.toml validate-config
+```
+
+4. Enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now proxmox-mcp.service
+sudo systemctl status proxmox-mcp.service
+```
+
+Useful operational commands:
+
+```bash
+sudo journalctl -u proxmox-mcp.service -f
+sudo /opt/proxmox-mcp-server/.venv/bin/proxmox-mcpctl --config /etc/proxmox-mcp/config.toml approve ops_console --ttl 30m
+sudo /opt/proxmox-mcp-server/.venv/bin/proxmox-mcpctl --config /etc/proxmox-mcp/config.toml list
+```
+
+Minimal Proxmox preparation:
+
+1. Create a dedicated Proxmox user and API token for this service
+2. Grant only the permissions needed for the enabled tool families
+3. If using SSH fallback for guest exec, provision a dedicated key with the narrowest practical guest-side privileges
 
 ## Notes
 

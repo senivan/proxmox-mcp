@@ -71,3 +71,12 @@ profile = "readonly"
             self.assertEqual(config.guest_exec.default_timeout_seconds, 45)
             self.assertEqual(config.guest_exec.local_node_name, "pve1")
             self.assertIn(("pve1", "qemu", 101), config.guest_exec.ssh_targets)
+
+    def test_example_config_parses(self) -> None:
+        config = load_config(Path(__file__).resolve().parents[1] / "examples" / "config.toml")
+        self.assertEqual(config.server.port, 8443)
+        self.assertTrue(config.tls.enabled)
+        self.assertEqual(
+            config.remote.approval_store,
+            Path("/var/lib/proxmox-mcp/approvals.json").resolve(),
+        )

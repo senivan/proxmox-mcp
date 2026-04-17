@@ -44,6 +44,9 @@ def build_admin_parser() -> argparse.ArgumentParser:
     mode_parser.add_argument("value", choices=sorted(VALID_REMOTE_MODES))
 
     subparsers.add_parser("list")
+    subparsers.add_parser("validate-config")
+    subparsers.add_parser("show-mode")
+    subparsers.add_parser("show-clients")
     return parser
 
 
@@ -94,6 +97,19 @@ def run_admin(argv: list[str] | None = None) -> int:
     args = build_admin_parser().parse_args(argv)
     config = load_config(args.config)
     store = ApprovalStore(config.remote.approval_store)
+
+    if args.command == "validate-config":
+        print(f"config ok: {args.config}")
+        return 0
+
+    if args.command == "show-mode":
+        print(config.remote.mode)
+        return 0
+
+    if args.command == "show-clients":
+        for client in sorted(config.clients.values(), key=lambda item: item.client_id):
+            print(f"{client.client_id}\t{client.profile}")
+        return 0
 
     if args.command == "approve":
         if args.client_id not in config.clients:
