@@ -46,7 +46,7 @@ def handle_mcp_post(
     tls_peer_identity,
     raw_body: bytes,
     guest_exec: GuestExecService | None = None,
-) -> tuple[HTTPStatus, dict[str, Any]]:
+) -> tuple[HTTPStatus, dict[str, Any] | None]:
     authn = None
     request_id = None
     method = None
@@ -322,7 +322,7 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
             except Exception:  # noqa: BLE001
                 LOG.warning("failed to set idle timeout on connection")
 
-        def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
+        def _send_json(self, status: HTTPStatus, payload: dict[str, Any] | None) -> None:
             body = b""
             if payload is not None:
                 body = json.dumps(payload).encode("utf-8")
