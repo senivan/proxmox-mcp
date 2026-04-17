@@ -120,3 +120,64 @@ profile = "readonly"
             with self.assertRaises(ValueError) as ctx:
                 load_config(config_path)
             self.assertIn("allow_insecure_tls = true", str(ctx.exception))
+
+    def test_duplicate_guest_exec_targets_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_path = root / "config.toml"
+            config_path.write_text(
+                """
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[tls]
+enabled = false
+
+[remote]
+mode = "allow-listed"
+approval_store = "./state/approvals.json"
+
+[audit]
+file = "./state/audit.jsonl"
+
+[guest_exec]
+default_timeout_seconds = 30
+max_output_bytes = 1024
+poll_interval_seconds = 1
+
+[guest_exec.ssh_targets.app1]
+node = "pve1"
+vmid = 101
+type = "qemu"
+host = "10.0.0.50"
+user = "root"
+
+[guest_exec.ssh_targets.app1_duplicate]
+node = "pve1"
+vmid = 101
+type = "qemu"
+host = "10.0.0.51"
+user = "root"
+
+[proxmox]
+base_url = "https://127.0.0.1:8006/api2/json"
+token_id = "mcp@pam!default"
+token_secret = "secret"
+verify_tls = true
+
+[profiles.readonly]
+capabilities = ["inventory.read"]
+
+[clients.ops_laptop]
+token = "abc"
+profile = "readonly"
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError) as ctx:
+                load_config(config_path)
+            self.assertIn("duplicate guest_exec ssh target", str(ctx.exception))
+            self.assertIn("app1", str(ctx.exception))
+            self.assertIn("app1_duplicate", str(ctx.exception))
