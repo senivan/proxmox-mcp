@@ -313,7 +313,10 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         server_version = "ProxmoxMCP/0.1"
         protocol_version = "HTTP/1.1"
-        IDLE_CONNECTION_TIMEOUT_SECONDS = 10
+        # MCP clients can spend noticeable time deciding on the first tool call
+        # after discovery, so keep the transport alive longer than a generic
+        # short-lived HTTP RPC endpoint would.
+        IDLE_CONNECTION_TIMEOUT_SECONDS = 300
 
         def setup(self) -> None:
             super().setup()
