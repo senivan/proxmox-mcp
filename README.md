@@ -25,6 +25,8 @@ This repository contains the v0 scaffold and first vertical slice:
 The current implementation intentionally avoids destructive actions and
 arbitrary command execution.
 
+For planned feature work and parallelization boundaries, see [ROADMAP.md](ROADMAP.md).
+
 ## Layout
 
 ```text
