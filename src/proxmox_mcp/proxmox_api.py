@@ -84,10 +84,22 @@ class ProxmoxApi:
             raise ProxmoxApiError("expected list for vm resources")
         return data
 
+    def get_cluster_summary(self) -> list[dict]:
+        data = self.get(self._path("cluster", "status"))
+        if not isinstance(data, list):
+            raise ProxmoxApiError("expected list for cluster status")
+        return data
+
     def get_node(self, node: str) -> dict:
         data = self.get(self._path("nodes", node, "status"))
         if not isinstance(data, dict):
             raise ProxmoxApiError("expected object for node status")
+        return data
+
+    def list_node_networks(self, *, node: str) -> list[dict]:
+        data = self.get(self._path("nodes", node, "network"))
+        if not isinstance(data, list):
+            raise ProxmoxApiError("expected list for node network")
         return data
 
     def get_vm(self, *, node: str, vmid: int, vm_type: str) -> dict:

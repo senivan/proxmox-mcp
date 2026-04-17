@@ -8,6 +8,18 @@ from proxmox_mcp.validation import validate_tool_arguments
 
 
 class ValidationTests(unittest.TestCase):
+    def test_cluster_summary_rejects_extra_arguments(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            validate_tool_arguments("proxmox.cluster.summary", {"node": "pve1"})
+        self.assertIn("unexpected arguments: node", str(ctx.exception))
+
+    def test_node_networks_list_accepts_expected_shape(self) -> None:
+        validated = validate_tool_arguments(
+            "proxmox.node.networks.list",
+            {"node": "pve1"},
+        )
+        self.assertEqual(validated["node"], "pve1")
+
     def test_vm_get_requires_integer_vmid(self) -> None:
         with self.assertRaises(ValueError) as ctx:
             validate_tool_arguments(
@@ -47,6 +59,14 @@ class ValidationTests(unittest.TestCase):
             validate_tool_arguments(
                 "proxmox.vm.get",
                 {"node": "../pve1", "vmid": 100, "type": "qemu"},
+            )
+        self.assertIn("node must not contain '/'", str(ctx.exception))
+
+    def test_node_networks_list_rejects_slash_in_node(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            validate_tool_arguments(
+                "proxmox.node.networks.list",
+                {"node": "../pve1"},
             )
         self.assertIn("node must not contain '/'", str(ctx.exception))
 

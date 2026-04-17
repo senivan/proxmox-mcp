@@ -83,7 +83,13 @@ def validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
     if tool_name == "proxmox.nodes.list":
         _ensure_only_keys(arguments, set())
         return {}
+    if tool_name == "proxmox.cluster.summary":
+        _ensure_only_keys(arguments, set())
+        return {}
     if tool_name == "proxmox.node.get":
+        _ensure_only_keys(arguments, {"node"})
+        return {"node": require_path_segment(arguments, "node")}
+    if tool_name == "proxmox.node.networks.list":
         _ensure_only_keys(arguments, {"node"})
         return {"node": require_path_segment(arguments, "node")}
     if tool_name == "proxmox.vms.list":
