@@ -1,20 +1,38 @@
 [server]
-host = "127.0.0.1"
-port = 8080
+host = "0.0.0.0"
+port = 8443
 
 [tls]
-enabled = false
-cert_file = "./tls/server.crt"
-key_file = "./tls/server.key"
-client_ca_file = "./tls/ca.crt"
+enabled = true
+cert_file = "/etc/proxmox-mcp/tls/server.crt"
+key_file = "/etc/proxmox-mcp/tls/server.key"
+client_ca_file = "/etc/proxmox-mcp/tls/ca.crt"
 require_client_cert = false
 
 [remote]
 mode = "allow-listed"
-approval_store = "./state/approvals.json"
+approval_store = "/var/lib/proxmox-mcp/approvals.json"
 
 [audit]
-file = "./state/audit.jsonl"
+file = "/var/lib/proxmox-mcp/audit.jsonl"
+
+[guest_exec]
+default_timeout_seconds = 30
+max_output_bytes = 65536
+poll_interval_seconds = 1
+local_node_name = "pve1"
+
+# Optional SSH fallback targets for QEMU guests without guest agent:
+# [guest_exec.ssh_targets.app1]
+# node = "pve1"
+# vmid = 101
+# type = "qemu"
+# host = "10.0.0.50"
+# user = "root"
+# port = 22
+# private_key_file = "/etc/proxmox-mcp/ssh/id_ed25519"
+# known_hosts_file = "/etc/proxmox-mcp/ssh/known_hosts"
+# strict_host_key_checking = true
 
 [proxmox]
 base_url = "https://127.0.0.1:8006/api2/json"
@@ -23,10 +41,10 @@ token_secret = "replace-me"
 verify_tls = true
 
 [profiles.readonly]
-capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read"]
+capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.snapshot.read"]
 
 [profiles.operator]
-capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.power"]
+capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.power", "vm.snapshot.read", "vm.snapshot.write", "vm.guest.exec"]
 
 [clients.ops_laptop]
 token = "replace-me"

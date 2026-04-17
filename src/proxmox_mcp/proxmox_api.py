@@ -116,6 +116,55 @@ class ProxmoxApi:
             raise ProxmoxApiError("expected object for storage status")
         return data
 
+    def list_vm_snapshots(self, *, node: str, vmid: int, vm_type: str) -> list[dict]:
+        if vm_type not in {"qemu", "lxc"}:
+            raise ProxmoxApiError(f"unsupported vm type: {vm_type}")
+        data = self.get(f"/nodes/{node}/{vm_type}/{vmid}/snapshot")
+        if not isinstance(data, list):
+            raise ProxmoxApiError("expected list for vm snapshots")
+        return data
+
+    def create_vm_snapshot(
+        self, *, node: str, vmid: int, vm_type: str, snapshot: str
+    ) -> dict:
+        if vm_type not in {"qemu", "lxc"}:
+            raise ProxmoxApiError(f"unsupported vm type: {vm_type}")
+        upid = self.post(f"/nodes/{node}/{vm_type}/{vmid}/snapshot/{snapshot}")
+        return {
+            "action": "snapshot.create",
+            "target": {
+                "node": node,
+                "vmid": vmid,
+                "type": vm_type,
+                "snapshot": snapshot,
+            },
+            "task": {
+                "upid": upid,
+            },
+        }
+
+    def delete_vm_snapshot(
+        self, *, node: str, vmid: int, vm_type: str, snapshot: str
+    ) -> dict:
+        if vm_type not in {"qemu", "lxc"}:
+            raise ProxmoxApiError(f"unsupported vm type: {vm_type}")
+        upid = self._request(
+            f"/nodes/{node}/{vm_type}/{vmid}/snapshot/{snapshot}",
+            method="DELETE",
+        )
+        return {
+            "action": "snapshot.delete",
+            "target": {
+                "node": node,
+                "vmid": vmid,
+                "type": vm_type,
+                "snapshot": snapshot,
+            },
+            "task": {
+                "upid": upid,
+            },
+        }
+
     def vm_action(self, *, node: str, vmid: int, vm_type: str, action: str) -> dict:
         if vm_type not in {"qemu", "lxc"}:
             raise ProxmoxApiError(f"unsupported vm type: {vm_type}")

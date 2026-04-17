@@ -35,6 +35,28 @@ class AuditConfig:
 
 
 @dataclass(frozen=True)
+class SshTargetConfig:
+    node: str
+    vmid: int
+    type: str
+    host: str
+    user: str
+    port: int
+    private_key_file: Path | None
+    known_hosts_file: Path | None
+    strict_host_key_checking: bool
+
+
+@dataclass(frozen=True)
+class GuestExecConfig:
+    default_timeout_seconds: int
+    max_output_bytes: int
+    poll_interval_seconds: int
+    local_node_name: str | None
+    ssh_targets: dict[tuple[str, str, int], SshTargetConfig]
+
+
+@dataclass(frozen=True)
 class ProxmoxConfig:
     base_url: str
     token_id: str
@@ -57,6 +79,7 @@ class AppConfig:
     tls: TlsConfig
     remote: RemoteConfig
     audit: AuditConfig
+    guest_exec: GuestExecConfig
     proxmox: ProxmoxConfig
     profiles: dict[str, set[str]]
     clients: dict[str, ClientConfig]
@@ -79,6 +102,11 @@ def load_config(path: str | Path) -> AppConfig:
     remote_raw = _require_table(raw, "remote")
     audit_raw = _require_table(raw, "audit")
     proxmox_raw = _require_table(raw, "proxmox")
+    guest_exec_raw = raw.get("guest_exec", {})
+    if guest_exec_raw is None:
+        guest_exec_raw = {}
+    if not isinstance(guest_exec_raw, dict):
+        raise ValueError("invalid [guest_exec] table")
     profiles_raw = _require_table(raw, "profiles")
     clients_raw = _require_table(raw, "clients")
 
@@ -104,6 +132,64 @@ def load_config(path: str | Path) -> AppConfig:
         raise ValueError("tls.enabled requires tls.cert_file and tls.key_file")
     if require_client_cert and client_ca_file is None:
         raise ValueError("tls.require_client_cert requires tls.client_ca_file")
+
+    guest_exec_timeout = int(guest_exec_raw.get("default_timeout_seconds", 30))
+    guest_exec_max_output = int(guest_exec_raw.get("max_output_bytes", 65536))
+    guest_exec_poll = int(guest_exec_raw.get("poll_interval_seconds", 1))
+    local_node_name_raw = guest_exec_raw.get("local_node_name")
+    if guest_exec_timeout < 1:
+        raise ValueError("guest_exec.default_timeout_seconds must be >= 1")
+    if guest_exec_max_output < 1:
+        raise ValueError("guest_exec.max_output_bytes must be >= 1")
+    if guest_exec_poll < 1:
+        raise ValueError("guest_exec.poll_interval_seconds must be >= 1")
+    if local_node_name_raw is not None and (
+        not isinstance(local_node_name_raw, str) or not local_node_name_raw.strip()
+    ):
+        raise ValueError("guest_exec.local_node_name must be a non-empty string")
+
+    ssh_targets_raw = guest_exec_raw.get("ssh_targets", {})
+    if ssh_targets_raw is None:
+        ssh_targets_raw = {}
+    if not isinstance(ssh_targets_raw, dict):
+        raise ValueError("guest_exec.ssh_targets must be a table")
+    ssh_targets: dict[tuple[str, str, int], SshTargetConfig] = {}
+    for target_name, target_raw in ssh_targets_raw.items():
+        if not isinstance(target_raw, dict):
+            raise ValueError(f"invalid guest_exec ssh target {target_name}")
+        node = target_raw.get("node")
+        vmid = target_raw.get("vmid")
+        vm_type = target_raw.get("type")
+        host = target_raw.get("host")
+        user = target_raw.get("user")
+        if not isinstance(node, str) or not node.strip():
+            raise ValueError(f"missing node for guest_exec ssh target {target_name}")
+        if isinstance(vmid, bool) or not isinstance(vmid, int) or vmid < 1:
+            raise ValueError(f"invalid vmid for guest_exec ssh target {target_name}")
+        if vm_type not in {"qemu", "lxc"}:
+            raise ValueError(f"invalid type for guest_exec ssh target {target_name}")
+        if not isinstance(host, str) or not host.strip():
+            raise ValueError(f"missing host for guest_exec ssh target {target_name}")
+        if not isinstance(user, str) or not user.strip():
+            raise ValueError(f"missing user for guest_exec ssh target {target_name}")
+        port = int(target_raw.get("port", 22))
+        if port < 1:
+            raise ValueError(f"invalid port for guest_exec ssh target {target_name}")
+        private_key_file = _resolve_optional_path(target_raw.get("private_key_file"))
+        known_hosts_file = _resolve_optional_path(target_raw.get("known_hosts_file"))
+        strict_host_key_checking = bool(target_raw.get("strict_host_key_checking", True))
+        ssh_target = SshTargetConfig(
+            node=node.strip(),
+            vmid=vmid,
+            type=vm_type,
+            host=host.strip(),
+            user=user.strip(),
+            port=port,
+            private_key_file=private_key_file,
+            known_hosts_file=known_hosts_file,
+            strict_host_key_checking=strict_host_key_checking,
+        )
+        ssh_targets[(ssh_target.node, ssh_target.type, ssh_target.vmid)] = ssh_target
 
     profiles: dict[str, set[str]] = {}
     for profile_name, profile_data in profiles_raw.items():
@@ -173,6 +259,15 @@ def load_config(path: str | Path) -> AppConfig:
         ),
         audit=AuditConfig(
             file=(config_path.parent / str(audit_raw["file"])).resolve(),
+        ),
+        guest_exec=GuestExecConfig(
+            default_timeout_seconds=guest_exec_timeout,
+            max_output_bytes=guest_exec_max_output,
+            poll_interval_seconds=guest_exec_poll,
+            local_node_name=local_node_name_raw.strip()
+            if isinstance(local_node_name_raw, str)
+            else None,
+            ssh_targets=ssh_targets,
         ),
         proxmox=ProxmoxConfig(
             base_url=str(proxmox_raw["base_url"]).rstrip("/"),

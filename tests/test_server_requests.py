@@ -40,6 +40,20 @@ class FakeApi:
             },
         }
 
+    def create_vm_snapshot(self, *, node: str, vmid: int, vm_type: str, snapshot: str):
+        return {
+            "action": "snapshot.create",
+            "target": {
+                "node": node,
+                "vmid": vmid,
+                "type": vm_type,
+                "snapshot": snapshot,
+            },
+            "task": {
+                "upid": "UPID:pve1:00000002:00000002:snapshot:101:root@pam:",
+            },
+        }
+
 
 class ServerRequestTests(unittest.TestCase):
     def _make_config(self, root: Path):
@@ -71,10 +85,10 @@ token_secret = "secret"
 verify_tls = true
 
 [profiles.readonly]
-capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read"]
+capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.snapshot.read"]
 
 [profiles.operator]
-capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.power"]
+capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.power", "vm.snapshot.read", "vm.snapshot.write"]
 
 [clients.ops_laptop]
 token = "abc"
@@ -287,3 +301,40 @@ profile = "operator"
             self.assertIn('"task"', payload["result"]["content"][0]["text"])
             self.assertIn('"target"', payload["result"]["content"][0]["text"])
             self.assertEqual(api.calls[0]["action"], "reboot")
+
+    def test_snapshot_create_request_path_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = self._make_config(root)
+            approval_store = ApprovalStore(config.remote.approval_store)
+            approval_store.approve("ops_console", timedelta(minutes=5))
+            audit_logger = AuditLogger(config.audit.file)
+            api = FakeApi()
+            status, payload = handle_mcp_post(
+                config=config,
+                approval_store=approval_store,
+                audit_logger=audit_logger,
+                proxmox_api=api,
+                authorization_header="Bearer xyz",
+                client_id_header="ops_console",
+                tls_peer_identity=None,
+                raw_body=json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 7,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "proxmox.vm.snapshot.create",
+                            "arguments": {
+                                "node": "pve1",
+                                "vmid": 101,
+                                "type": "qemu",
+                                "snapshot": "before-upgrade",
+                            },
+                        },
+                    }
+                ).encode("utf-8"),
+            )
+            self.assertEqual(status, HTTPStatus.OK)
+            self.assertIn('"snapshot.create"', payload["result"]["content"][0]["text"])
+            self.assertIn('"before-upgrade"', payload["result"]["content"][0]["text"])

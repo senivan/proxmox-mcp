@@ -12,6 +12,7 @@ from proxmox_mcp.approval_store import ApprovalStore
 from proxmox_mcp.audit import AuditLogger
 from proxmox_mcp.auth import authenticate, extract_tls_peer_identity
 from proxmox_mcp.config import AppConfig
+from proxmox_mcp.guest_exec import GuestExecService
 from proxmox_mcp.proxmox_api import ProxmoxApi, ProxmoxApiError
 from proxmox_mcp.tools import call_tool, list_tools
 
@@ -22,6 +23,9 @@ MUTATING_TOOLS = {
     "proxmox.vm.reboot",
     "proxmox.vm.shutdown",
     "proxmox.vm.stop",
+    "proxmox.vm.snapshot.create",
+    "proxmox.vm.snapshot.delete",
+    "proxmox.vm.guest.exec",
 }
 MAX_REQUEST_BODY_BYTES = 1_048_576
 
@@ -41,6 +45,7 @@ def handle_mcp_post(
     client_id_header: str | None,
     tls_peer_identity,
     raw_body: bytes,
+    guest_exec: GuestExecService | None = None,
 ) -> tuple[HTTPStatus, dict[str, Any]]:
     authn = None
     request_id = None
@@ -141,7 +146,13 @@ def handle_mcp_post(
                 authn.principal.profile,
                 tool_name,
             )
-            result = call_tool(tool_name, arguments, authn.principal, proxmox_api)
+            result = call_tool(
+                tool_name,
+                arguments,
+                authn.principal,
+                proxmox_api,
+                guest_exec=guest_exec,
+            )
             audit_logger.write(
                 event="mcp_request",
                 method=method,
@@ -284,6 +295,7 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
     approval_store = ApprovalStore(config.remote.approval_store)
     audit_logger = AuditLogger(config.audit.file)
     proxmox_api = ProxmoxApi(config.proxmox)
+    guest_exec = GuestExecService(config)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "ProxmoxMCP/0.1"
@@ -333,6 +345,7 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                 approval_store=approval_store,
                 audit_logger=audit_logger,
                 proxmox_api=proxmox_api,
+                guest_exec=guest_exec,
                 authorization_header=self.headers.get("Authorization"),
                 client_id_header=self.headers.get("X-Client-Id"),
                 tls_peer_identity=self._tls_peer_identity(),
