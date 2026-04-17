@@ -14,12 +14,16 @@ def parse_ttl(value: str | None) -> timedelta | None:
     if value is None:
         return None
     if value.endswith("m"):
-        return timedelta(minutes=int(value[:-1]))
-    if value.endswith("h"):
-        return timedelta(hours=int(value[:-1]))
-    if value.endswith("d"):
-        return timedelta(days=int(value[:-1]))
-    raise ValueError("ttl must use m, h, or d suffix")
+        ttl = timedelta(minutes=int(value[:-1]))
+    elif value.endswith("h"):
+        ttl = timedelta(hours=int(value[:-1]))
+    elif value.endswith("d"):
+        ttl = timedelta(days=int(value[:-1]))
+    else:
+        raise ValueError("ttl must use m, h, or d suffix")
+    if ttl <= timedelta(0):
+        raise ValueError("ttl must be greater than zero")
+    return ttl
 
 
 def build_server_parser() -> argparse.ArgumentParser:
