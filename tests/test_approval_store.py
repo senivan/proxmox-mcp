@@ -42,3 +42,13 @@ class ApprovalStoreTests(unittest.TestCase):
             path.write_text("{", encoding="utf-8")
             store = ApprovalStore(path)
             self.assertFalse(store.is_approved("ops-laptop"))
+
+    def test_invalid_expires_at_is_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "approvals.json"
+            path.write_text(
+                '{"approvals": {"ops-laptop": {"expires_at": "not-a-date"}}}',
+                encoding="utf-8",
+            )
+            store = ApprovalStore(path)
+            self.assertFalse(store.is_approved("ops-laptop"))
