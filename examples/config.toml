@@ -31,6 +31,9 @@ capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.
 [clients.ops_laptop]
 token = "replace-me"
 profile = "readonly"
+# Optional client certificate bindings when mTLS is enabled:
+# tls_client_common_name = "ops-laptop"
+# tls_client_fingerprint_sha256 = "0123456789abcdef..."
 
 [clients.ops_console]
 token = "replace-me-too"

@@ -10,7 +10,7 @@ from typing import Any
 
 from proxmox_mcp.approval_store import ApprovalStore
 from proxmox_mcp.audit import AuditLogger
-from proxmox_mcp.auth import authenticate
+from proxmox_mcp.auth import authenticate, extract_tls_peer_identity
 from proxmox_mcp.config import AppConfig
 from proxmox_mcp.proxmox_api import ProxmoxApi, ProxmoxApiError
 from proxmox_mcp.tools import call_tool, list_tools
@@ -59,6 +59,14 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
             target = {key: arguments[key] for key in ("node", "vmid", "type") if key in arguments}
             return target or None
 
+        def _tls_peer_identity(self):
+            getpeercert = getattr(self.connection, "getpeercert", None)
+            if getpeercert is None:
+                return None
+            peer_cert = getpeercert()
+            peer_cert_der = getpeercert(binary_form=True)
+            return extract_tls_peer_identity(peer_cert, peer_cert_der)
+
         def do_GET(self) -> None:  # noqa: N802
             if self.path == "/healthz":
                 self._send_json(HTTPStatus.OK, {"status": "ok"})
@@ -88,6 +96,7 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                     config,
                     authorization_header=self.headers.get("Authorization"),
                     client_id_header=self.headers.get("X-Client-Id"),
+                    tls_peer_identity=self._tls_peer_identity(),
                 )
                 self._require_remote_approval(authn.principal.client_id)
 
@@ -96,6 +105,8 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                         event="mcp_request",
                         client_id=authn.principal.client_id,
                         profile=authn.principal.profile,
+                        tls_client_common_name=authn.tls_peer_identity.common_name if authn.tls_peer_identity else None,
+                        tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn.tls_peer_identity else None,
                         method=method,
                         tool_name=None,
                         kind="read",
@@ -120,6 +131,8 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                         event="mcp_request",
                         client_id=authn.principal.client_id,
                         profile=authn.principal.profile,
+                        tls_client_common_name=authn.tls_peer_identity.common_name if authn.tls_peer_identity else None,
+                        tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn.tls_peer_identity else None,
                         method=method,
                         tool_name=None,
                         kind="read",
@@ -155,6 +168,8 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                         event="mcp_request",
                         client_id=authn.principal.client_id,
                         profile=authn.principal.profile,
+                        tls_client_common_name=authn.tls_peer_identity.common_name if authn.tls_peer_identity else None,
+                        tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn.tls_peer_identity else None,
                         method=method,
                         tool_name=tool_name,
                         kind=audit_kind,
@@ -176,6 +191,8 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                         event="mcp_request",
                         client_id=authn.principal.client_id,
                         profile=authn.principal.profile,
+                        tls_client_common_name=authn.tls_peer_identity.common_name if authn.tls_peer_identity else None,
+                        tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn.tls_peer_identity else None,
                         method=method,
                         tool_name=None,
                         kind="read",
@@ -191,6 +208,8 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                     event="mcp_request",
                     client_id=authn.principal.client_id,
                     profile=authn.principal.profile,
+                    tls_client_common_name=authn.tls_peer_identity.common_name if authn.tls_peer_identity else None,
+                    tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn.tls_peer_identity else None,
                     method=method,
                     tool_name=tool_name,
                     kind=audit_kind,
@@ -205,6 +224,8 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                     event="mcp_request",
                     client_id=authn.principal.client_id if authn else None,
                     profile=authn.principal.profile if authn else None,
+                    tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
+                    tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
                     method=method,
                     tool_name=tool_name,
                     kind=audit_kind,
@@ -219,6 +240,8 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                     event="mcp_request",
                     client_id=authn.principal.client_id if authn else None,
                     profile=authn.principal.profile if authn else None,
+                    tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
+                    tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
                     method=method,
                     tool_name=tool_name,
                     kind=audit_kind,
@@ -232,6 +255,8 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                     event="mcp_request",
                     client_id=None,
                     profile=None,
+                    tls_client_common_name=None,
+                    tls_client_fingerprint_sha256=None,
                     method=method,
                     tool_name=tool_name,
                     kind=audit_kind,
@@ -245,6 +270,8 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                     event="mcp_request",
                     client_id=authn.principal.client_id if authn else None,
                     profile=authn.principal.profile if authn else None,
+                    tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
+                    tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
                     method=method,
                     tool_name=tool_name,
                     kind=audit_kind,
@@ -259,6 +286,8 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                     event="mcp_request",
                     client_id=authn.principal.client_id if authn else None,
                     profile=authn.principal.profile if authn else None,
+                    tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
+                    tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
                     method=method,
                     tool_name=tool_name,
                     kind=audit_kind,

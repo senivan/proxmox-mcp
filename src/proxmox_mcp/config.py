@@ -47,6 +47,8 @@ class ClientConfig:
     client_id: str
     token: str
     profile: str
+    tls_client_common_name: str | None
+    tls_client_fingerprint_sha256: str | None
 
 
 @dataclass(frozen=True)
@@ -120,10 +122,23 @@ def load_config(path: str | Path) -> AppConfig:
             raise ValueError(f"invalid client definition for {client_id}")
         token = client_data.get("token")
         profile = client_data.get("profile")
+        tls_client_common_name = client_data.get("tls_client_common_name")
+        tls_client_fingerprint_sha256 = client_data.get("tls_client_fingerprint_sha256")
         if not isinstance(token, str) or not token:
             raise ValueError(f"missing token for client {client_id}")
         if not isinstance(profile, str) or not profile:
             raise ValueError(f"missing profile for client {client_id}")
+        if tls_client_common_name is not None and (
+            not isinstance(tls_client_common_name, str) or not tls_client_common_name.strip()
+        ):
+            raise ValueError(f"invalid tls_client_common_name for client {client_id}")
+        if tls_client_fingerprint_sha256 is not None and (
+            not isinstance(tls_client_fingerprint_sha256, str)
+            or not tls_client_fingerprint_sha256.strip()
+        ):
+            raise ValueError(
+                f"invalid tls_client_fingerprint_sha256 for client {client_id}"
+            )
         if profile not in profiles:
             raise ValueError(
                 f"client {client_id} references unknown profile {profile}"
@@ -132,6 +147,12 @@ def load_config(path: str | Path) -> AppConfig:
             client_id=client_id,
             token=token,
             profile=profile,
+            tls_client_common_name=tls_client_common_name.strip()
+            if isinstance(tls_client_common_name, str)
+            else None,
+            tls_client_fingerprint_sha256=tls_client_fingerprint_sha256.strip().lower()
+            if isinstance(tls_client_fingerprint_sha256, str)
+            else None,
         )
 
     return AppConfig(
