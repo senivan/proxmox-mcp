@@ -22,6 +22,8 @@ MUTATING_TOOLS = {
     "proxmox.vm.reboot",
     "proxmox.vm.shutdown",
     "proxmox.vm.stop",
+    "proxmox.vm.snapshot.create",
+    "proxmox.vm.snapshot.delete",
 }
 
 

@@ -47,6 +47,16 @@ class PolicyTests(unittest.TestCase):
         require_tool_access(principal, "proxmox.vm.shutdown")
         require_tool_access(principal, "proxmox.vm.stop")
 
+    def test_snapshot_capabilities_are_separated(self) -> None:
+        principal = Principal(
+            client_id="ops-laptop",
+            profile="readonly",
+            capabilities={"vm.snapshot.read"},
+        )
+        require_tool_access(principal, "proxmox.vm.snapshot.list")
+        with self.assertRaises(PermissionError):
+            require_tool_access(principal, "proxmox.vm.snapshot.create")
+
     def test_operator_tools_are_hidden_from_readonly_clients(self) -> None:
         principal = Principal(
             client_id="ops-laptop",

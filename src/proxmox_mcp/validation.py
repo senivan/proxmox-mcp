@@ -80,6 +80,21 @@ def validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
             "node": require_string(arguments, "node"),
             "storage": require_string(arguments, "storage"),
         }
+    if tool_name == "proxmox.vm.snapshot.list":
+        _ensure_only_keys(arguments, {"node", "vmid", "type"})
+        return {
+            "node": require_string(arguments, "node"),
+            "vmid": require_int(arguments, "vmid", minimum=1),
+            "type": require_vm_type(arguments),
+        }
+    if tool_name in {"proxmox.vm.snapshot.create", "proxmox.vm.snapshot.delete"}:
+        _ensure_only_keys(arguments, {"node", "vmid", "type", "snapshot"})
+        return {
+            "node": require_string(arguments, "node"),
+            "vmid": require_int(arguments, "vmid", minimum=1),
+            "type": require_vm_type(arguments),
+            "snapshot": require_string(arguments, "snapshot"),
+        }
     if tool_name in {
         "proxmox.vm.start",
         "proxmox.vm.reboot",

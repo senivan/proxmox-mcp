@@ -23,10 +23,10 @@ token_secret = "replace-me"
 verify_tls = true
 
 [profiles.readonly]
-capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read"]
+capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.snapshot.read"]
 
 [profiles.operator]
-capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.power"]
+capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.power", "vm.snapshot.read", "vm.snapshot.write"]
 
 [clients.ops_laptop]
 token = "replace-me"

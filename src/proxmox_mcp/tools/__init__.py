@@ -96,6 +96,50 @@ def list_tools(principal=None) -> list[dict]:
             },
         },
         {
+            "name": "proxmox.vm.snapshot.list",
+            "description": "List snapshots for a Proxmox VM or container",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "node": {"type": "string", "minLength": 1},
+                    "vmid": {"type": "integer", "minimum": 1},
+                    "type": {"type": "string", "enum": ["qemu", "lxc"]},
+                },
+                "required": ["node", "vmid", "type"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "proxmox.vm.snapshot.create",
+            "description": "Create a snapshot for a Proxmox VM or container",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "node": {"type": "string", "minLength": 1},
+                    "vmid": {"type": "integer", "minimum": 1},
+                    "type": {"type": "string", "enum": ["qemu", "lxc"]},
+                    "snapshot": {"type": "string", "minLength": 1},
+                },
+                "required": ["node", "vmid", "type", "snapshot"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "proxmox.vm.snapshot.delete",
+            "description": "Delete a snapshot for a Proxmox VM or container",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "node": {"type": "string", "minLength": 1},
+                    "vmid": {"type": "integer", "minimum": 1},
+                    "type": {"type": "string", "enum": ["qemu", "lxc"]},
+                    "snapshot": {"type": "string", "minLength": 1},
+                },
+                "required": ["node", "vmid", "type", "snapshot"],
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "proxmox.vm.shutdown",
             "description": "Gracefully shut down a Proxmox VM or container",
             "inputSchema": {
@@ -183,6 +227,33 @@ def call_tool(tool_name: str, arguments: dict, principal, api: ProxmoxApi) -> di
                 storage=validated["storage"],
             ),
         }
+    if tool_name == "proxmox.vm.snapshot.list":
+        return {
+            "target": {
+                "node": validated["node"],
+                "vmid": validated["vmid"],
+                "type": validated["type"],
+            },
+            "snapshots": api.list_vm_snapshots(
+                node=validated["node"],
+                vmid=validated["vmid"],
+                vm_type=validated["type"],
+            ),
+        }
+    if tool_name == "proxmox.vm.snapshot.create":
+        return api.create_vm_snapshot(
+            node=validated["node"],
+            vmid=validated["vmid"],
+            vm_type=validated["type"],
+            snapshot=validated["snapshot"],
+        )
+    if tool_name == "proxmox.vm.snapshot.delete":
+        return api.delete_vm_snapshot(
+            node=validated["node"],
+            vmid=validated["vmid"],
+            vm_type=validated["type"],
+            snapshot=validated["snapshot"],
+        )
     if tool_name == "proxmox.vm.start":
         return api.vm_action(
             node=validated["node"],
