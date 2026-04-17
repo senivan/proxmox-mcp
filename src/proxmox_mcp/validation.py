@@ -17,6 +17,15 @@ def require_string(arguments: dict, key: str) -> str:
     return value.strip()
 
 
+def require_path_segment(arguments: dict, key: str) -> str:
+    value = require_string(arguments, key)
+    if "/" in value:
+        raise ValueError(f"{key} must not contain '/'")
+    if any(ord(char) < 32 for char in value):
+        raise ValueError(f"{key} contains invalid characters")
+    return value
+
+
 def require_int(arguments: dict, key: str, *, minimum: int | None = None, maximum: int | None = None) -> int:
     value = arguments.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
@@ -76,14 +85,14 @@ def validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
         return {}
     if tool_name == "proxmox.node.get":
         _ensure_only_keys(arguments, {"node"})
-        return {"node": require_string(arguments, "node")}
+        return {"node": require_path_segment(arguments, "node")}
     if tool_name == "proxmox.vms.list":
         _ensure_only_keys(arguments, set())
         return {}
     if tool_name == "proxmox.vm.get":
         _ensure_only_keys(arguments, {"node", "vmid", "type"})
         return {
-            "node": require_string(arguments, "node"),
+            "node": require_path_segment(arguments, "node"),
             "vmid": require_int(arguments, "vmid", minimum=1),
             "type": require_vm_type(arguments),
         }
@@ -99,28 +108,28 @@ def validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
     if tool_name == "proxmox.storage.get":
         _ensure_only_keys(arguments, {"node", "storage"})
         return {
-            "node": require_string(arguments, "node"),
-            "storage": require_string(arguments, "storage"),
+            "node": require_path_segment(arguments, "node"),
+            "storage": require_path_segment(arguments, "storage"),
         }
     if tool_name == "proxmox.vm.snapshot.list":
         _ensure_only_keys(arguments, {"node", "vmid", "type"})
         return {
-            "node": require_string(arguments, "node"),
+            "node": require_path_segment(arguments, "node"),
             "vmid": require_int(arguments, "vmid", minimum=1),
             "type": require_vm_type(arguments),
         }
     if tool_name in {"proxmox.vm.snapshot.create", "proxmox.vm.snapshot.delete"}:
         _ensure_only_keys(arguments, {"node", "vmid", "type", "snapshot"})
         return {
-            "node": require_string(arguments, "node"),
+            "node": require_path_segment(arguments, "node"),
             "vmid": require_int(arguments, "vmid", minimum=1),
             "type": require_vm_type(arguments),
-            "snapshot": require_string(arguments, "snapshot"),
+            "snapshot": require_path_segment(arguments, "snapshot"),
         }
     if tool_name == "proxmox.vm.guest.exec":
         _ensure_only_keys(arguments, {"node", "vmid", "type", "argv", "timeout_seconds"})
         return {
-            "node": require_string(arguments, "node"),
+            "node": require_path_segment(arguments, "node"),
             "vmid": require_int(arguments, "vmid", minimum=1),
             "type": require_vm_type(arguments),
             "argv": require_string_list(arguments, "argv"),
@@ -140,7 +149,7 @@ def validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
     }:
         _ensure_only_keys(arguments, {"node", "vmid", "type"})
         return {
-            "node": require_string(arguments, "node"),
+            "node": require_path_segment(arguments, "node"),
             "vmid": require_int(arguments, "vmid", minimum=1),
             "type": require_vm_type(arguments),
         }

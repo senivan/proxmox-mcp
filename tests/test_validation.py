@@ -41,3 +41,19 @@ class ValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             validate_tool_arguments("proxmox.task.get", {"upid": "not-a-upid"})
         self.assertIn("upid must start with 'UPID:'", str(ctx.exception))
+
+    def test_vm_get_rejects_slash_in_node(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            validate_tool_arguments(
+                "proxmox.vm.get",
+                {"node": "../pve1", "vmid": 100, "type": "qemu"},
+            )
+        self.assertIn("node must not contain '/'", str(ctx.exception))
+
+    def test_snapshot_create_rejects_slash_in_snapshot_name(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            validate_tool_arguments(
+                "proxmox.vm.snapshot.create",
+                {"node": "pve1", "vmid": 100, "type": "qemu", "snapshot": "../nightly"},
+            )
+        self.assertIn("snapshot must not contain '/'", str(ctx.exception))

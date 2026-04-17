@@ -80,3 +80,43 @@ profile = "readonly"
             config.remote.approval_store,
             Path("/var/lib/proxmox-mcp/approvals.json").resolve(),
         )
+
+    def test_verify_tls_false_requires_explicit_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_path = root / "config.toml"
+            config_path.write_text(
+                """
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[tls]
+enabled = false
+
+[remote]
+mode = "allow-listed"
+approval_store = "./state/approvals.json"
+
+[audit]
+file = "./state/audit.jsonl"
+
+[proxmox]
+base_url = "https://127.0.0.1:8006/api2/json"
+token_id = "mcp@pam!default"
+token_secret = "secret"
+verify_tls = false
+
+[profiles.readonly]
+capabilities = ["inventory.read"]
+
+[clients.ops_laptop]
+token = "abc"
+profile = "readonly"
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError) as ctx:
+                load_config(config_path)
+            self.assertIn("allow_insecure_tls = true", str(ctx.exception))

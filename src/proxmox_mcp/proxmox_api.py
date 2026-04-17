@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import ssl
-from urllib import error, request
+from urllib import error, parse, request
 
 from proxmox_mcp.config import ProxmoxConfig
 
@@ -31,6 +31,12 @@ class ProxmoxApi:
         if data is not None:
             req.add_header("Content-Type", "application/x-www-form-urlencoded")
         return req
+
+    def _segment(self, value: str | int) -> str:
+        return parse.quote(str(value), safe="")
+
+    def _path(self, *segments: str | int) -> str:
+        return "/" + "/".join(self._segment(segment) for segment in segments)
 
     def _context(self) -> ssl.SSLContext | None:
         if self.config.verify_tls:
@@ -66,19 +72,20 @@ class ProxmoxApi:
         return self._request(path, method="POST", data=b"")
 
     def list_nodes(self) -> list[dict]:
-        data = self.get("/nodes")
+        data = self.get(self._path("nodes"))
         if not isinstance(data, list):
             raise ProxmoxApiError("expected list for /nodes")
         return data
 
     def list_vms(self) -> list[dict]:
-        data = self.get("/cluster/resources?type=vm")
+        query = parse.urlencode({"type": "vm"})
+        data = self.get(f"{self._path('cluster', 'resources')}?{query}")
         if not isinstance(data, list):
             raise ProxmoxApiError("expected list for vm resources")
         return data
 
     def get_node(self, node: str) -> dict:
-        data = self.get(f"/nodes/{node}/status")
+        data = self.get(self._path("nodes", node, "status"))
         if not isinstance(data, dict):
             raise ProxmoxApiError("expected object for node status")
         return data
@@ -86,32 +93,33 @@ class ProxmoxApi:
     def get_vm(self, *, node: str, vmid: int, vm_type: str) -> dict:
         if vm_type not in {"qemu", "lxc"}:
             raise ProxmoxApiError(f"unsupported vm type: {vm_type}")
-        data = self.get(f"/nodes/{node}/{vm_type}/{vmid}/status/current")
+        data = self.get(self._path("nodes", node, vm_type, vmid, "status", "current"))
         if not isinstance(data, dict):
             raise ProxmoxApiError("expected object for vm status")
         return data
 
     def list_tasks(self, limit: int = 25) -> list[dict]:
-        data = self.get(f"/cluster/tasks?limit={limit}")
+        query = parse.urlencode({"limit": limit})
+        data = self.get(f"{self._path('cluster', 'tasks')}?{query}")
         if not isinstance(data, list):
             raise ProxmoxApiError("expected list for cluster tasks")
         return data
 
     def get_task(self, upid: str) -> dict:
         node = self._node_from_upid(upid)
-        data = self.get(f"/nodes/{node}/tasks/{upid}/status")
+        data = self.get(self._path("nodes", node, "tasks", upid, "status"))
         if not isinstance(data, dict):
             raise ProxmoxApiError("expected object for task status")
         return {"node": node, "upid": upid, "status": data}
 
     def list_storage(self) -> list[dict]:
-        data = self.get("/storage")
+        data = self.get(self._path("storage"))
         if not isinstance(data, list):
             raise ProxmoxApiError("expected list for storage")
         return data
 
     def get_storage(self, *, node: str, storage: str) -> dict:
-        data = self.get(f"/nodes/{node}/storage/{storage}/status")
+        data = self.get(self._path("nodes", node, "storage", storage, "status"))
         if not isinstance(data, dict):
             raise ProxmoxApiError("expected object for storage status")
         return data
@@ -119,7 +127,7 @@ class ProxmoxApi:
     def list_vm_snapshots(self, *, node: str, vmid: int, vm_type: str) -> list[dict]:
         if vm_type not in {"qemu", "lxc"}:
             raise ProxmoxApiError(f"unsupported vm type: {vm_type}")
-        data = self.get(f"/nodes/{node}/{vm_type}/{vmid}/snapshot")
+        data = self.get(self._path("nodes", node, vm_type, vmid, "snapshot"))
         if not isinstance(data, list):
             raise ProxmoxApiError("expected list for vm snapshots")
         return data
@@ -129,7 +137,7 @@ class ProxmoxApi:
     ) -> dict:
         if vm_type not in {"qemu", "lxc"}:
             raise ProxmoxApiError(f"unsupported vm type: {vm_type}")
-        upid = self.post(f"/nodes/{node}/{vm_type}/{vmid}/snapshot/{snapshot}")
+        upid = self.post(self._path("nodes", node, vm_type, vmid, "snapshot", snapshot))
         return {
             "action": "snapshot.create",
             "target": {
@@ -149,7 +157,7 @@ class ProxmoxApi:
         if vm_type not in {"qemu", "lxc"}:
             raise ProxmoxApiError(f"unsupported vm type: {vm_type}")
         upid = self._request(
-            f"/nodes/{node}/{vm_type}/{vmid}/snapshot/{snapshot}",
+            self._path("nodes", node, vm_type, vmid, "snapshot", snapshot),
             method="DELETE",
         )
         return {
@@ -170,7 +178,7 @@ class ProxmoxApi:
             raise ProxmoxApiError(f"unsupported vm type: {vm_type}")
         if action not in {"start", "reboot", "shutdown", "stop"}:
             raise ProxmoxApiError(f"unsupported vm action: {action}")
-        upid = self.post(f"/nodes/{node}/{vm_type}/{vmid}/status/{action}")
+        upid = self.post(self._path("nodes", node, vm_type, vmid, "status", action))
         return {
             "action": action,
             "target": {

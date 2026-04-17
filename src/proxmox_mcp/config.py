@@ -241,6 +241,18 @@ def load_config(path: str | Path) -> AppConfig:
             else None,
         )
 
+    verify_tls_raw = proxmox_raw.get("verify_tls", True)
+    if not isinstance(verify_tls_raw, bool):
+        raise ValueError("proxmox.verify_tls must be a boolean")
+    verify_tls = verify_tls_raw
+    allow_insecure_tls = proxmox_raw.get("allow_insecure_tls", False)
+    if not isinstance(allow_insecure_tls, bool):
+        raise ValueError("proxmox.allow_insecure_tls must be a boolean")
+    if not verify_tls and not allow_insecure_tls:
+        raise ValueError(
+            "proxmox.verify_tls = false requires proxmox.allow_insecure_tls = true"
+        )
+
     return AppConfig(
         server=ServerConfig(
             host=str(server_raw.get("host", "127.0.0.1")),
@@ -273,7 +285,7 @@ def load_config(path: str | Path) -> AppConfig:
             base_url=str(proxmox_raw["base_url"]).rstrip("/"),
             token_id=str(proxmox_raw["token_id"]),
             token_secret=str(proxmox_raw["token_secret"]),
-            verify_tls=bool(proxmox_raw.get("verify_tls", True)),
+            verify_tls=verify_tls,
         ),
         profiles=profiles,
         clients=clients,

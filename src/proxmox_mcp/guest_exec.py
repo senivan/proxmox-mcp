@@ -26,6 +26,22 @@ def _decode_agent_output(value: str | None) -> bytes:
         return value.encode("utf-8", errors="replace")
 
 
+def _validate_ssh_destination_component(value: str, *, field_name: str) -> str:
+    if not value:
+        raise ProxmoxApiError(f"invalid ssh {field_name}")
+    if value.startswith("-"):
+        raise ProxmoxApiError(f"invalid ssh {field_name}")
+    if any(char.isspace() or ord(char) < 32 for char in value):
+        raise ProxmoxApiError(f"invalid ssh {field_name}")
+    return value
+
+
+def _validate_pve_path_segment(value: str, *, field_name: str) -> str:
+    if not value or "/" in value or any(ord(char) < 32 for char in value):
+        raise ProxmoxApiError(f"invalid {field_name}")
+    return value
+
+
 def _run_process(
     argv: list[str],
     *,
@@ -47,6 +63,8 @@ def _run_process(
 
 
 def _ssh_command(target: SshTargetConfig, argv: list[str]) -> list[str]:
+    user = _validate_ssh_destination_component(target.user, field_name="user")
+    host = _validate_ssh_destination_component(target.host, field_name="host")
     cmd = [
         "ssh",
         "-o",
@@ -60,7 +78,7 @@ def _ssh_command(target: SshTargetConfig, argv: list[str]) -> list[str]:
         cmd += ["-o", f"UserKnownHostsFile={target.known_hosts_file}"]
     if target.private_key_file is not None:
         cmd += ["-i", str(target.private_key_file)]
-    cmd.append(f"{target.user}@{target.host}")
+    cmd.append(f"{user}@{host}")
     cmd.extend(argv)
     return cmd
 
@@ -87,6 +105,7 @@ class GuestExecService:
         timeout_seconds: int | None,
     ) -> dict:
         timeout = timeout_seconds or self.config.guest_exec.default_timeout_seconds
+        node = _validate_pve_path_segment(node, field_name="node")
         if vm_type == "lxc":
             return self._exec_lxc(node=node, vmid=vmid, argv=argv, timeout_seconds=timeout)
         if vm_type == "qemu":
@@ -119,7 +138,8 @@ class GuestExecService:
     ) -> dict:
         local_node = self.config.guest_exec.local_node_name
         if local_node and node != local_node:
-            cmd = ["ssh", node, "pct", "exec", str(vmid), "--", *argv]
+            remote_node = _validate_ssh_destination_component(node, field_name="node")
+            cmd = ["ssh", remote_node, "pct", "exec", str(vmid), "--", *argv]
             backend = "pct-ssh"
         else:
             cmd = ["pct", "exec", str(vmid), "--", *argv]

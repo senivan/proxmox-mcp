@@ -140,4 +140,6 @@ Minimal Proxmox preparation:
 - Storage visibility is separated behind `storage.read`.
 - Enable TLS before exposing the listener beyond localhost.
 - Enable mTLS by setting `tls.require_client_cert = true` and configuring `tls.client_ca_file`.
+- `proxmox.verify_tls` should stay enabled. Setting it to `false` now also requires
+  `proxmox.allow_insecure_tls = true` as an explicit opt-in.
 - Audit records are appended to `audit.file` as one JSON object per line.

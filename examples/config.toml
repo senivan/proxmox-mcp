@@ -39,6 +39,7 @@ base_url = "https://127.0.0.1:8006/api2/json"
 token_id = "mcp@pam!default"
 token_secret = "replace-me"
 verify_tls = true
+# allow_insecure_tls = true  # required only for intentionally insecure testing
 
 [profiles.readonly]
 capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.snapshot.read"]
