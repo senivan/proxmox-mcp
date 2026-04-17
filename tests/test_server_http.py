@@ -116,3 +116,72 @@ profile = "readonly"
                 httpd.shutdown()
                 server_thread.join()
                 httpd.server_close()
+
+    def test_delayed_tool_call_survives_idle_gap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = self._make_config(root)
+            httpd = create_server(config)
+            httpd.daemon_threads = True
+            server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            server_thread.start()
+            conn: http.client.HTTPConnection | None = None
+            try:
+                host, port = httpd.server_address
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                headers = {
+                    "Authorization": "Bearer abc",
+                    "X-Client-Id": "ops_laptop",
+                    "Content-Type": "application/json",
+                    "Connection": "keep-alive",
+                }
+
+                conn.request(
+                    "POST",
+                    "/mcp",
+                    body=json.dumps(
+                        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+                    ),
+                    headers=headers,
+                )
+                init_resp = conn.getresponse()
+                self.assertEqual(init_resp.status, HTTPStatus.OK)
+                init_resp.read()
+
+                conn.request(
+                    "POST",
+                    "/mcp",
+                    body=json.dumps(
+                        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+                    ),
+                    headers=headers,
+                )
+                list_resp = conn.getresponse()
+                self.assertEqual(list_resp.status, HTTPStatus.OK)
+                list_resp.read()
+
+                # Simulate model thinking time between discovery and the first tool call.
+                # This should stay well below the server's keep-alive timeout.
+                idle_gap = min(
+                    0.2,
+                    httpd.RequestHandlerClass.IDLE_CONNECTION_TIMEOUT_SECONDS / 2,
+                )
+                self.assertGreater(idle_gap, 0)
+                threading.Event().wait(idle_gap)
+
+                conn.request(
+                    "POST",
+                    "/mcp",
+                    body=json.dumps({"jsonrpc": "2.0", "id": 3, "method": "ping", "params": {}}),
+                    headers=headers,
+                )
+                ping_resp = conn.getresponse()
+                self.assertEqual(ping_resp.status, HTTPStatus.OK)
+                ping_payload = json.loads(ping_resp.read())
+                self.assertEqual(ping_payload["result"], {})
+            finally:
+                if conn is not None:
+                    conn.close()
+                httpd.shutdown()
+                server_thread.join()
+                httpd.server_close()
