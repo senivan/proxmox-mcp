@@ -36,3 +36,8 @@ class ValidationTests(unittest.TestCase):
         )
         self.assertEqual(validated["node"], "pve1")
         self.assertEqual(validated["storage"], "local-zfs")
+
+    def test_task_get_validates_upid_format(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            validate_tool_arguments("proxmox.task.get", {"upid": "not-a-upid"})
+        self.assertIn("upid must start with 'UPID:'", str(ctx.exception))

@@ -12,7 +12,7 @@ from proxmox_mcp.approval_store import ApprovalStore
 from proxmox_mcp.audit import AuditLogger
 from proxmox_mcp.config import load_config
 from proxmox_mcp.proxmox_api import ProxmoxApiError
-from proxmox_mcp.server import handle_mcp_post
+from proxmox_mcp.server import MAX_REQUEST_BODY_BYTES, handle_mcp_post
 
 
 class FakeApi:
@@ -151,6 +151,27 @@ profile = "operator"
             self.assertEqual(payload["error"]["code"], -32601)
             self.assertIn("method not found", payload["error"]["message"])
 
+    def test_request_rejects_non_object_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = self._make_config(root)
+            approval_store = ApprovalStore(config.remote.approval_store)
+            approval_store.approve("ops_laptop", timedelta(minutes=5))
+            audit_logger = AuditLogger(config.audit.file)
+            status, payload = handle_mcp_post(
+                config=config,
+                approval_store=approval_store,
+                audit_logger=audit_logger,
+                proxmox_api=FakeApi(),
+                authorization_header="Bearer abc",
+                client_id_header="ops_laptop",
+                tls_peer_identity=None,
+                raw_body=json.dumps([]).encode("utf-8"),
+            )
+            self.assertEqual(status, HTTPStatus.OK)
+            self.assertEqual(payload["error"]["code"], -32602)
+            self.assertIn("JSON object", payload["error"]["message"])
+
     def test_tool_validation_error_returns_invalid_params(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
@@ -211,6 +232,27 @@ profile = "operator"
             self.assertEqual(status, HTTPStatus.OK)
             self.assertEqual(payload["error"]["code"], -32002)
             self.assertIn("backend unavailable", payload["error"]["message"])
+
+    def test_request_rejects_large_body(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = self._make_config(root)
+            approval_store = ApprovalStore(config.remote.approval_store)
+            approval_store.approve("ops_laptop", timedelta(minutes=5))
+            audit_logger = AuditLogger(config.audit.file)
+            raw = b"x" * (MAX_REQUEST_BODY_BYTES + 1)
+            status, payload = handle_mcp_post(
+                config=config,
+                approval_store=approval_store,
+                audit_logger=audit_logger,
+                proxmox_api=FakeApi(),
+                authorization_header="Bearer abc",
+                client_id_header="ops_laptop",
+                tls_peer_identity=None,
+                raw_body=raw,
+            )
+            self.assertEqual(status, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+            self.assertEqual(payload["error"], "request body too large")
 
     def test_mutating_tool_request_path_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
