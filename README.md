@@ -114,6 +114,7 @@ After install:
 
 ```bash
 sudo /opt/proxmox-mcp-server/.venv/bin/proxmox-mcpctl --config /etc/proxmox-mcp/config.toml validate-config
+sudo /opt/proxmox-mcp-server/.venv/bin/proxmox-mcpctl --config /etc/proxmox-mcp/config.toml validate-config --check-paths
 ```
 
 4. Enable and start the service:
@@ -130,7 +131,12 @@ Useful operational commands:
 sudo journalctl -u proxmox-mcp.service -f
 sudo /opt/proxmox-mcp-server/.venv/bin/proxmox-mcpctl --config /etc/proxmox-mcp/config.toml approve ops_console --ttl 30m
 sudo /opt/proxmox-mcp-server/.venv/bin/proxmox-mcpctl --config /etc/proxmox-mcp/config.toml list
+sudo /opt/proxmox-mcp-server/.venv/bin/proxmox-mcpctl --config /etc/proxmox-mcp/config.toml show-clients
 ```
+
+`validate-config --check-paths` is intended for deployed hosts. It verifies
+that the config file exists, the mutable-state directories are present, and the
+configured TLS files exist when TLS is enabled.
 
 Minimal Proxmox preparation:
 

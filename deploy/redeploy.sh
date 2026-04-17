@@ -14,7 +14,7 @@ fi
 echo "Redeploying proxmox-mcp-server from ${REPO_ROOT}"
 
 "${REPO_ROOT}/deploy/install.sh"
-"${PREFIX}/.venv/bin/proxmox-mcpctl" --config "${CONFIG_PATH}" validate-config
+"${PREFIX}/.venv/bin/proxmox-mcpctl" --config "${CONFIG_PATH}" validate-config --check-paths
 
 systemctl daemon-reload
 if systemctl is-enabled "${SYSTEMD_UNIT}" >/dev/null 2>&1; then
