@@ -21,7 +21,17 @@ class FakeApi:
                 "action": action,
             }
         )
-        return self.calls[-1]
+        return {
+            "action": action,
+            "target": {
+                "node": node,
+                "vmid": vmid,
+                "type": vm_type,
+            },
+            "task": {
+                "upid": "UPID:pve1:00000001:00000001:reboot:101:root@pam:",
+            },
+        }
 
 
 class ToolTests(unittest.TestCase):
@@ -39,4 +49,6 @@ class ToolTests(unittest.TestCase):
             api,
         )
         self.assertEqual(result["action"], "reboot")
+        self.assertEqual(result["target"]["vmid"], 101)
+        self.assertEqual(result["task"]["upid"], "UPID:pve1:00000001:00000001:reboot:101:root@pam:")
         self.assertEqual(api.calls[0]["vmid"], 101)

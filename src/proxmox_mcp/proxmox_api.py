@@ -121,13 +121,17 @@ class ProxmoxApi:
             raise ProxmoxApiError(f"unsupported vm type: {vm_type}")
         if action not in {"start", "reboot", "shutdown", "stop"}:
             raise ProxmoxApiError(f"unsupported vm action: {action}")
-        data = self.post(f"/nodes/{node}/{vm_type}/{vmid}/status/{action}")
+        upid = self.post(f"/nodes/{node}/{vm_type}/{vmid}/status/{action}")
         return {
-            "node": node,
-            "vmid": vmid,
-            "type": vm_type,
             "action": action,
-            "upid": data,
+            "target": {
+                "node": node,
+                "vmid": vmid,
+                "type": vm_type,
+            },
+            "task": {
+                "upid": upid,
+            },
         }
 
     def _node_from_upid(self, upid: str) -> str:

@@ -28,7 +28,17 @@ class FakeApi:
     def vm_action(self, *, node: str, vmid: int, vm_type: str, action: str):
         call = {"node": node, "vmid": vmid, "type": vm_type, "action": action}
         self.calls.append(call)
-        return call
+        return {
+            "action": action,
+            "target": {
+                "node": node,
+                "vmid": vmid,
+                "type": vm_type,
+            },
+            "task": {
+                "upid": "UPID:pve1:00000001:00000001:reboot:101:root@pam:",
+            },
+        }
 
 
 class ServerRequestTests(unittest.TestCase):
@@ -232,4 +242,6 @@ profile = "operator"
             )
             self.assertEqual(status, HTTPStatus.OK)
             self.assertIn('"action": "reboot"', payload["result"]["content"][0]["text"])
+            self.assertIn('"task"', payload["result"]["content"][0]["text"])
+            self.assertIn('"target"', payload["result"]["content"][0]["text"])
             self.assertEqual(api.calls[0]["action"], "reboot")
