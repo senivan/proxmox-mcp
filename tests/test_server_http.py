@@ -65,7 +65,7 @@ profile = "readonly"
             conn: http.client.HTTPConnection | None = None
             try:
                 host, port = httpd.server_address
-                conn = http.client.HTTPConnection(host, port)
+                conn = http.client.HTTPConnection(host, port, timeout=5)
                 headers = {
                     "Authorization": "Bearer abc",
                     "X-Client-Id": "ops_laptop",
@@ -95,9 +95,8 @@ profile = "readonly"
                     headers=headers,
                 )
                 notif_resp = conn.getresponse()
-                self.assertEqual(notif_resp.status, HTTPStatus.OK)
-                notif_payload = json.loads(notif_resp.read())
-                self.assertNotIn("error", notif_payload)
+                self.assertEqual(notif_resp.status, HTTPStatus.NO_CONTENT)
+                self.assertEqual(notif_resp.read(), b"")
 
                 conn.request(
                     "POST",
