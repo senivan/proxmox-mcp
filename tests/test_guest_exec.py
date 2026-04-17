@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -86,7 +87,10 @@ profile = "operator"
             timeout_seconds=5,
         )
         self.assertEqual(result["backend"], "ssh")
+        self.assertEqual(result["backend_reason"], "guest-agent-unavailable")
         self.assertEqual(result["result"]["stdout"], "ok\n")
+        self.assertEqual(result["result"]["stdout_original_bytes"], 3)
+        self.assertEqual(result["result"]["max_output_bytes"], 1024)
 
     def test_lxc_exec_uses_pct(self) -> None:
         config = self._load_config(
@@ -139,6 +143,67 @@ profile = "operator"
         )
         self.assertEqual(result["backend"], "pct")
         self.assertEqual(result["result"]["stdout"], "hello\n")
+        self.assertEqual(result["result"]["stdout_original_bytes"], 6)
+        self.assertFalse(result["result"]["stdout_truncated"])
+
+    def test_lxc_remote_node_uses_ssh_with_reason(self) -> None:
+        config = self._load_config(
+            """
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[tls]
+enabled = false
+
+[remote]
+mode = "allow-listed"
+approval_store = "./state/approvals.json"
+
+[audit]
+file = "./state/audit.jsonl"
+
+[guest_exec]
+default_timeout_seconds = 30
+max_output_bytes = 4
+poll_interval_seconds = 1
+local_node_name = "pve1"
+
+[proxmox]
+base_url = "https://127.0.0.1:8006/api2/json"
+token_id = "token"
+token_secret = "secret"
+verify_tls = true
+
+[profiles.operator]
+capabilities = ["vm.guest.exec"]
+
+[clients.ops]
+token = "abc"
+profile = "operator"
+"""
+        )
+
+        def runner(argv, **kwargs):
+            self.assertEqual(argv[:4], ["ssh", "pve2", "pct", "exec"])
+            return _Result(stdout=b"hello-world\n")
+
+        service = GuestExecService(config, runner=runner, sleep_fn=lambda _: None)
+        result = service.execute(
+            node="pve2",
+            vmid=102,
+            vm_type="lxc",
+            argv=["/bin/echo", "hello"],
+            timeout_seconds=5,
+        )
+        self.assertEqual(result["backend"], "pct-ssh")
+        self.assertEqual(
+            result["backend_reason"],
+            "target node pve2 differs from local node pve1",
+        )
+        self.assertEqual(result["result"]["stdout"], "hell")
+        self.assertTrue(result["result"]["stdout_truncated"])
+        self.assertEqual(result["result"]["stdout_original_bytes"], 12)
 
     def test_qemu_ssh_fallback_rejects_option_like_host(self) -> None:
         config = self._load_config(
@@ -196,6 +261,111 @@ profile = "operator"
                 vmid=101,
                 vm_type="qemu",
                 argv=["/bin/echo", "ok"],
+                timeout_seconds=5,
+            )
+
+    def test_qemu_guest_agent_missing_ssh_fallback_reports_target(self) -> None:
+        config = self._load_config(
+            """
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[tls]
+enabled = false
+
+[remote]
+mode = "allow-listed"
+approval_store = "./state/approvals.json"
+
+[audit]
+file = "./state/audit.jsonl"
+
+[guest_exec]
+default_timeout_seconds = 30
+max_output_bytes = 1024
+poll_interval_seconds = 1
+
+[proxmox]
+base_url = "https://127.0.0.1:8006/api2/json"
+token_id = "token"
+token_secret = "secret"
+verify_tls = true
+
+[profiles.operator]
+capabilities = ["vm.guest.exec"]
+
+[clients.ops]
+token = "abc"
+profile = "operator"
+"""
+        )
+
+        def runner(argv, **kwargs):
+            if argv[:4] == ["pvesh", "create", "/nodes/pve1/qemu/101/agent/exec", "--output-format"]:
+                return _Result(returncode=255, stderr=b"QEMU guest agent is not running")
+            raise AssertionError(f"unexpected argv: {argv}")
+
+        service = GuestExecService(config, runner=runner, sleep_fn=lambda _: None)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "qemu guest agent is unavailable for pve1/101 and no ssh fallback is configured",
+        ):
+            service.execute(
+                node="pve1",
+                vmid=101,
+                vm_type="qemu",
+                argv=["/bin/echo", "ok"],
+                timeout_seconds=5,
+            )
+
+    def test_lxc_timeout_names_backend(self) -> None:
+        config = self._load_config(
+            """
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[tls]
+enabled = false
+
+[remote]
+mode = "allow-listed"
+approval_store = "./state/approvals.json"
+
+[audit]
+file = "./state/audit.jsonl"
+
+[guest_exec]
+default_timeout_seconds = 30
+max_output_bytes = 1024
+poll_interval_seconds = 1
+
+[proxmox]
+base_url = "https://127.0.0.1:8006/api2/json"
+token_id = "token"
+token_secret = "secret"
+verify_tls = true
+
+[profiles.operator]
+capabilities = ["vm.guest.exec"]
+
+[clients.ops]
+token = "abc"
+profile = "operator"
+"""
+        )
+
+        def runner(argv, **kwargs):
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+        service = GuestExecService(config, runner=runner, sleep_fn=lambda _: None)
+        with self.assertRaisesRegex(RuntimeError, "guest exec via pct timed out after 5s"):
+            service.execute(
+                node="pve1",
+                vmid=102,
+                vm_type="lxc",
+                argv=["/bin/echo", "hello"],
                 timeout_seconds=5,
             )
 
