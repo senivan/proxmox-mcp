@@ -46,7 +46,7 @@ def handle_mcp_post(
     tls_peer_identity,
     raw_body: bytes,
     guest_exec: GuestExecService | None = None,
-) -> tuple[HTTPStatus, dict[str, Any]]:
+) -> tuple[HTTPStatus, dict[str, Any] | None]:
     authn = None
     request_id = None
     method = None
@@ -112,6 +112,19 @@ def handle_mcp_post(
                     },
                 },
             )
+
+        if method == "notifications/initialized":
+            audit_logger.write(
+                event="mcp_request",
+                method=method,
+                tool_name=None,
+                kind="read",
+                outcome="allowed",
+                **audit_kwargs,
+            )
+            if request_id is None:
+                return (HTTPStatus.NO_CONTENT, None)
+            return (HTTPStatus.OK, {"jsonrpc": "2.0", "id": request_id, "result": {}})
 
         if method == "tools/list":
             audit_logger.write(
@@ -299,14 +312,30 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "ProxmoxMCP/0.1"
+        protocol_version = "HTTP/1.1"
+        IDLE_CONNECTION_TIMEOUT_SECONDS = 10
 
-        def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
-            body = json.dumps(payload).encode("utf-8")
+        def setup(self) -> None:
+            super().setup()
+            try:
+                self.connection.settimeout(self.IDLE_CONNECTION_TIMEOUT_SECONDS)
+            except Exception:  # noqa: BLE001
+                LOG.warning("failed to set idle timeout on connection", exc_info=True)
+
+        def _send_json(self, status: HTTPStatus, payload: dict[str, Any] | None) -> None:
+            body = b""
+            if payload is not None:
+                body = json.dumps(payload).encode("utf-8")
             self.send_response(status)
-            self.send_header("Content-Type", "application/json")
+            if payload is not None:
+                self.send_header("Content-Type", "application/json")
+            connection_header = (self.headers.get("Connection") or "").lower()
+            if self.close_connection or connection_header == "close":
+                self.send_header("Connection", "close")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            if body:
+                self.wfile.write(body)
 
         def _tls_peer_identity(self):
             getpeercert = getattr(self.connection, "getpeercert", None)
