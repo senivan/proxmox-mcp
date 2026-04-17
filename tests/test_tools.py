@@ -12,6 +12,12 @@ class FakeApi:
     def __init__(self) -> None:
         self.calls = []
 
+    def get_cluster_summary(self) -> list[dict]:
+        return [{"type": "cluster", "name": "pve", "quorate": 1}]
+
+    def list_node_networks(self, *, node: str) -> list[dict]:
+        return [{"iface": "vmbr0", "type": "bridge", "node": node}]
+
     def vm_action(self, *, node: str, vmid: int, vm_type: str, action: str) -> dict:
         self.calls.append(
             {
@@ -66,6 +72,32 @@ class FakeApi:
 
 
 class ToolTests(unittest.TestCase):
+    def test_cluster_summary_returns_cluster_entries(self) -> None:
+        api = FakeApi()
+        principal = Principal(
+            client_id="ops-laptop",
+            profile="readonly",
+            capabilities={"inventory.read"},
+        )
+        result = call_tool("proxmox.cluster.summary", {}, principal, api)
+        self.assertEqual(result["cluster"][0]["type"], "cluster")
+
+    def test_node_networks_list_returns_node_and_networks(self) -> None:
+        api = FakeApi()
+        principal = Principal(
+            client_id="ops-laptop",
+            profile="readonly",
+            capabilities={"node.read"},
+        )
+        result = call_tool(
+            "proxmox.node.networks.list",
+            {"node": "pve1"},
+            principal,
+            api,
+        )
+        self.assertEqual(result["node"], "pve1")
+        self.assertEqual(result["networks"][0]["iface"], "vmbr0")
+
     def test_vm_reboot_calls_power_action(self) -> None:
         api = FakeApi()
         principal = Principal(

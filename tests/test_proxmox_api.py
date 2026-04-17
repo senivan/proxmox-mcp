@@ -22,7 +22,7 @@ class _RecordingApi(ProxmoxApi):
 
     def get(self, path: str) -> dict:
         self.calls.append(("GET", path))
-        if path.startswith("/cluster/tasks"):
+        if path.startswith("/cluster/tasks") or path == "/cluster/status" or path.endswith("/network"):
             return []
         return {}
 
@@ -61,6 +61,16 @@ class ProxmoxApiTests(unittest.TestCase):
         api = _RecordingApi()
         api.list_tasks(limit=25)
         self.assertEqual(api.calls[0], ("GET", "/cluster/tasks?limit=25"))
+
+    def test_cluster_summary_uses_cluster_status_endpoint(self) -> None:
+        api = _RecordingApi()
+        api.get_cluster_summary()
+        self.assertEqual(api.calls[0], ("GET", "/cluster/status"))
+
+    def test_node_networks_list_uses_node_network_endpoint(self) -> None:
+        api = _RecordingApi()
+        api.list_node_networks(node="pve1")
+        self.assertEqual(api.calls[0], ("GET", "/nodes/pve1/network"))
 
     def test_get_vm_rejects_unsupported_type(self) -> None:
         api = _RecordingApi()

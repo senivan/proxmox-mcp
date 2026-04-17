@@ -5,7 +5,9 @@ from dataclasses import dataclass
 
 TOOL_CAPABILITIES = {
     "proxmox.nodes.list": {"inventory.read", "node.read"},
+    "proxmox.cluster.summary": {"inventory.read"},
     "proxmox.node.get": {"node.read"},
+    "proxmox.node.networks.list": {"node.read"},
     "proxmox.vms.list": {"inventory.read", "vm.read"},
     "proxmox.vm.get": {"vm.read"},
     "proxmox.tasks.list": {"task.read"},

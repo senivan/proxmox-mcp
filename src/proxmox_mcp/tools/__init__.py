@@ -14,8 +14,23 @@ def list_tools(principal=None) -> list[dict]:
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
         },
         {
+            "name": "proxmox.cluster.summary",
+            "description": "Get cluster-wide status summary",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
             "name": "proxmox.node.get",
             "description": "Get status for a Proxmox node",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"node": {"type": "string", "minLength": 1}},
+                "required": ["node"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "proxmox.node.networks.list",
+            "description": "List network interfaces configured on a Proxmox node",
             "inputSchema": {
                 "type": "object",
                 "properties": {"node": {"type": "string", "minLength": 1}},
@@ -217,8 +232,15 @@ def call_tool(tool_name: str, arguments: dict, principal, api: ProxmoxApi, guest
     validated = validate_tool_arguments(tool_name, arguments)
     if tool_name == "proxmox.nodes.list":
         return {"nodes": api.list_nodes()}
+    if tool_name == "proxmox.cluster.summary":
+        return {"cluster": api.get_cluster_summary()}
     if tool_name == "proxmox.node.get":
         return {"node": validated["node"], "status": api.get_node(validated["node"])}
+    if tool_name == "proxmox.node.networks.list":
+        return {
+            "node": validated["node"],
+            "networks": api.list_node_networks(node=validated["node"]),
+        }
     if tool_name == "proxmox.vms.list":
         return {"vms": api.list_vms()}
     if tool_name == "proxmox.vm.get":

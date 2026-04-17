@@ -34,7 +34,10 @@ class PolicyTests(unittest.TestCase):
             capabilities={"inventory.read", "vm.read"},
         )
         tool_names = {tool["name"] for tool in list_tools(principal)}
-        self.assertEqual(tool_names, {"proxmox.vms.list", "proxmox.vm.get"})
+        self.assertEqual(
+            tool_names,
+            {"proxmox.cluster.summary", "proxmox.vms.list", "proxmox.vm.get"},
+        )
 
     def test_operator_profile_can_use_power_actions(self) -> None:
         principal = Principal(
