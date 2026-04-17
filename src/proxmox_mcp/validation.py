@@ -48,6 +48,18 @@ def require_vm_type(arguments: dict) -> str:
     return vm_type
 
 
+def require_string_list(arguments: dict, key: str) -> list[str]:
+    value = arguments.get(key)
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{key} must be a non-empty array of strings")
+    result = []
+    for item in value:
+        if not isinstance(item, str) or not item:
+            raise ValueError(f"{key} must be a non-empty array of strings")
+        result.append(item)
+    return result
+
+
 def validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
     if tool_name == "proxmox.nodes.list":
         _ensure_only_keys(arguments, set())
@@ -94,6 +106,21 @@ def validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
             "vmid": require_int(arguments, "vmid", minimum=1),
             "type": require_vm_type(arguments),
             "snapshot": require_string(arguments, "snapshot"),
+        }
+    if tool_name == "proxmox.vm.guest.exec":
+        _ensure_only_keys(arguments, {"node", "vmid", "type", "argv", "timeout_seconds"})
+        return {
+            "node": require_string(arguments, "node"),
+            "vmid": require_int(arguments, "vmid", minimum=1),
+            "type": require_vm_type(arguments),
+            "argv": require_string_list(arguments, "argv"),
+            "timeout_seconds": optional_int(
+                arguments,
+                "timeout_seconds",
+                default=30,
+                minimum=1,
+                maximum=300,
+            ),
         }
     if tool_name in {
         "proxmox.vm.start",

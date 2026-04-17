@@ -140,6 +140,26 @@ def list_tools(principal=None) -> list[dict]:
             },
         },
         {
+            "name": "proxmox.vm.guest.exec",
+            "description": "Execute a non-interactive command inside a VM or container",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "node": {"type": "string", "minLength": 1},
+                    "vmid": {"type": "integer", "minimum": 1},
+                    "type": {"type": "string", "enum": ["qemu", "lxc"]},
+                    "argv": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {"type": "string", "minLength": 1},
+                    },
+                    "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 300},
+                },
+                "required": ["node", "vmid", "type", "argv"],
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "proxmox.vm.shutdown",
             "description": "Gracefully shut down a Proxmox VM or container",
             "inputSchema": {
@@ -192,7 +212,7 @@ def list_tools(principal=None) -> list[dict]:
     return allowed
 
 
-def call_tool(tool_name: str, arguments: dict, principal, api: ProxmoxApi) -> dict:
+def call_tool(tool_name: str, arguments: dict, principal, api: ProxmoxApi, guest_exec=None) -> dict:
     require_tool_access(principal, tool_name)
     validated = validate_tool_arguments(tool_name, arguments)
     if tool_name == "proxmox.nodes.list":
@@ -253,6 +273,16 @@ def call_tool(tool_name: str, arguments: dict, principal, api: ProxmoxApi) -> di
             vmid=validated["vmid"],
             vm_type=validated["type"],
             snapshot=validated["snapshot"],
+        )
+    if tool_name == "proxmox.vm.guest.exec":
+        if guest_exec is None:
+            raise RuntimeError("guest exec service is not configured")
+        return guest_exec.execute(
+            node=validated["node"],
+            vmid=validated["vmid"],
+            vm_type=validated["type"],
+            argv=validated["argv"],
+            timeout_seconds=validated["timeout_seconds"],
         )
     if tool_name == "proxmox.vm.start":
         return api.vm_action(

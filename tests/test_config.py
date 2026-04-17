@@ -33,6 +33,20 @@ approval_store = "./state/approvals.json"
 [audit]
 file = "./state/audit.jsonl"
 
+[guest_exec]
+default_timeout_seconds = 45
+max_output_bytes = 4096
+poll_interval_seconds = 2
+local_node_name = "pve1"
+
+[guest_exec.ssh_targets.app1]
+node = "pve1"
+vmid = 101
+type = "qemu"
+host = "10.0.0.50"
+user = "root"
+port = 22
+
 [proxmox]
 base_url = "https://127.0.0.1:8006/api2/json"
 token_id = "mcp@pam!default"
@@ -54,3 +68,6 @@ profile = "readonly"
             self.assertTrue(config.tls.enabled)
             self.assertTrue(config.tls.require_client_cert)
             self.assertEqual(config.audit.file, (root / "state" / "audit.jsonl").resolve())
+            self.assertEqual(config.guest_exec.default_timeout_seconds, 45)
+            self.assertEqual(config.guest_exec.local_node_name, "pve1")
+            self.assertIn(("pve1", "qemu", 101), config.guest_exec.ssh_targets)

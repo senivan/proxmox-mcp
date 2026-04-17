@@ -16,6 +16,24 @@ approval_store = "./state/approvals.json"
 [audit]
 file = "./state/audit.jsonl"
 
+[guest_exec]
+default_timeout_seconds = 30
+max_output_bytes = 65536
+poll_interval_seconds = 1
+# local_node_name = "pve1"
+
+# Optional SSH fallback targets for QEMU guests without guest agent:
+# [guest_exec.ssh_targets.app1]
+# node = "pve1"
+# vmid = 101
+# type = "qemu"
+# host = "10.0.0.50"
+# user = "root"
+# port = 22
+# private_key_file = "./ssh/id_ed25519"
+# known_hosts_file = "./ssh/known_hosts"
+# strict_host_key_checking = true
+
 [proxmox]
 base_url = "https://127.0.0.1:8006/api2/json"
 token_id = "mcp@pam!default"
@@ -26,7 +44,7 @@ verify_tls = true
 capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.snapshot.read"]
 
 [profiles.operator]
-capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.power", "vm.snapshot.read", "vm.snapshot.write"]
+capabilities = ["inventory.read", "node.read", "vm.read", "task.read", "storage.read", "vm.power", "vm.snapshot.read", "vm.snapshot.write", "vm.guest.exec"]
 
 [clients.ops_laptop]
 token = "replace-me"

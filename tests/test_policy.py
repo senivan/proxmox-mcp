@@ -57,6 +57,15 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             require_tool_access(principal, "proxmox.vm.snapshot.create")
 
+    def test_guest_exec_requires_dedicated_capability(self) -> None:
+        principal = Principal(
+            client_id="ops-console",
+            profile="operator",
+            capabilities={"vm.power"},
+        )
+        with self.assertRaises(PermissionError):
+            require_tool_access(principal, "proxmox.vm.guest.exec")
+
     def test_operator_tools_are_hidden_from_readonly_clients(self) -> None:
         principal = Principal(
             client_id="ops-laptop",

@@ -15,6 +15,7 @@ TOOL_CAPABILITIES = {
     "proxmox.vm.snapshot.list": {"vm.snapshot.read"},
     "proxmox.vm.snapshot.create": {"vm.snapshot.write"},
     "proxmox.vm.snapshot.delete": {"vm.snapshot.write"},
+    "proxmox.vm.guest.exec": {"vm.guest.exec"},
     "proxmox.vm.start": {"vm.power"},
     "proxmox.vm.reboot": {"vm.power"},
     "proxmox.vm.shutdown": {"vm.power"},
