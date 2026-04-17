@@ -181,3 +181,179 @@ profile = "readonly"
             self.assertIn("duplicate guest_exec ssh target", str(ctx.exception))
             self.assertIn("app1", str(ctx.exception))
             self.assertIn("app1_duplicate", str(ctx.exception))
+
+    def test_require_client_cert_needs_tls_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_path = root / "config.toml"
+            config_path.write_text(
+                """
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[tls]
+enabled = false
+require_client_cert = true
+cert_file = "./tls/server.crt"
+key_file = "./tls/server.key"
+client_ca_file = "./tls/ca.crt"
+
+[remote]
+mode = "allow-listed"
+approval_store = "./state/approvals.json"
+
+[audit]
+file = "./state/audit.jsonl"
+
+[proxmox]
+base_url = "https://127.0.0.1:8006/api2/json"
+token_id = "mcp@pam!default"
+token_secret = "secret"
+verify_tls = true
+
+[profiles.readonly]
+capabilities = ["inventory.read"]
+
+[clients.ops_laptop]
+token = "abc"
+profile = "readonly"
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError) as ctx:
+                load_config(config_path)
+            self.assertIn("tls.require_client_cert requires tls.enabled", str(ctx.exception))
+
+    def test_guest_exec_requires_positive_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_path = root / "config.toml"
+            config_path.write_text(
+                """
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[tls]
+enabled = false
+
+[remote]
+mode = "allow-listed"
+approval_store = "./state/approvals.json"
+
+[audit]
+file = "./state/audit.jsonl"
+
+[guest_exec]
+default_timeout_seconds = 0
+max_output_bytes = 1024
+poll_interval_seconds = 1
+
+[proxmox]
+base_url = "https://127.0.0.1:8006/api2/json"
+token_id = "mcp@pam!default"
+token_secret = "secret"
+verify_tls = true
+
+[profiles.readonly]
+capabilities = ["inventory.read"]
+
+[clients.ops_laptop]
+token = "abc"
+profile = "readonly"
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError) as ctx:
+                load_config(config_path)
+            self.assertIn("guest_exec.default_timeout_seconds must be >= 1", str(ctx.exception))
+
+    def test_guest_exec_rejects_unknown_ssh_type(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_path = root / "config.toml"
+            config_path.write_text(
+                """
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[tls]
+enabled = false
+
+[remote]
+mode = "allow-listed"
+approval_store = "./state/approvals.json"
+
+[audit]
+file = "./state/audit.jsonl"
+
+[guest_exec.ssh_targets.app1]
+node = "pve1"
+vmid = 101
+type = "container"
+host = "10.0.0.50"
+user = "root"
+
+[proxmox]
+base_url = "https://127.0.0.1:8006/api2/json"
+token_id = "mcp@pam!default"
+token_secret = "secret"
+verify_tls = true
+
+[profiles.readonly]
+capabilities = ["inventory.read"]
+
+[clients.ops_laptop]
+token = "abc"
+profile = "readonly"
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError) as ctx:
+                load_config(config_path)
+            self.assertIn("invalid type for guest_exec ssh target app1", str(ctx.exception))
+
+    def test_client_must_reference_known_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_path = root / "config.toml"
+            config_path.write_text(
+                """
+[server]
+host = "127.0.0.1"
+port = 8080
+
+[tls]
+enabled = false
+
+[remote]
+mode = "allow-listed"
+approval_store = "./state/approvals.json"
+
+[audit]
+file = "./state/audit.jsonl"
+
+[proxmox]
+base_url = "https://127.0.0.1:8006/api2/json"
+token_id = "mcp@pam!default"
+token_secret = "secret"
+verify_tls = true
+
+[profiles.readonly]
+capabilities = ["inventory.read"]
+
+[clients.ops_laptop]
+token = "abc"
+profile = "nonexistent"
+""".strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError) as ctx:
+                load_config(config_path)
+            self.assertIn("references unknown profile", str(ctx.exception))

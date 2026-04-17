@@ -5,7 +5,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from proxmox_mcp.config import ProxmoxConfig
-from proxmox_mcp.proxmox_api import ProxmoxApi
+from proxmox_mcp.proxmox_api import ProxmoxApi, ProxmoxApiError
 
 
 class _RecordingApi(ProxmoxApi):
@@ -61,3 +61,31 @@ class ProxmoxApiTests(unittest.TestCase):
         api = _RecordingApi()
         api.list_tasks(limit=25)
         self.assertEqual(api.calls[0], ("GET", "/cluster/tasks?limit=25"))
+
+    def test_get_vm_rejects_unsupported_type(self) -> None:
+        api = _RecordingApi()
+        with self.assertRaisesRegex(ProxmoxApiError, "unsupported vm type"):
+            api.get_vm(node="pve1", vmid=101, vm_type="container")
+
+    def test_vm_action_rejects_unknown_action(self) -> None:
+        api = _RecordingApi()
+        with self.assertRaisesRegex(ProxmoxApiError, "unsupported vm action"):
+            api.vm_action(node="pve1", vmid=101, vm_type="qemu", action="destroy")
+        self.assertEqual(api.calls, [])
+
+    def test_list_nodes_requires_list_payload(self) -> None:
+        class _InvalidPayloadApi(_RecordingApi):
+            def get(self, path: str) -> dict:
+                self.calls.append(("GET", path))
+                return {}
+
+        api = _InvalidPayloadApi()
+        with self.assertRaisesRegex(ProxmoxApiError, "expected list for /nodes"):
+            api.list_nodes()
+
+    def test_node_from_upid_validates_format(self) -> None:
+        api = _RecordingApi()
+        with self.assertRaisesRegex(ProxmoxApiError, "invalid UPID format"):
+            api._node_from_upid("not-a-upid")
+        with self.assertRaisesRegex(ProxmoxApiError, "invalid UPID format"):
+            api._node_from_upid("UPID::abc")

@@ -57,3 +57,24 @@ class ValidationTests(unittest.TestCase):
                 {"node": "pve1", "vmid": 100, "type": "qemu", "snapshot": "../nightly"},
             )
         self.assertIn("snapshot must not contain '/'", str(ctx.exception))
+
+    def test_validate_tool_arguments_rejects_unknown_tool(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            validate_tool_arguments("proxmox.unknown", {})
+        self.assertIn("unknown or disabled tool", str(ctx.exception))
+
+    def test_guest_exec_defaults_timeout_and_validates(self) -> None:
+        validated = validate_tool_arguments(
+            "proxmox.vm.guest.exec",
+            {"node": "pve1", "vmid": 101, "type": "qemu", "argv": ["/bin/echo", "ok"]},
+        )
+        self.assertEqual(validated["timeout_seconds"], 30)
+        self.assertEqual(validated["argv"], ["/bin/echo", "ok"])
+
+    def test_extra_arguments_are_rejected(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            validate_tool_arguments(
+                "proxmox.vm.get",
+                {"node": "pve1", "vmid": 100, "type": "qemu", "unexpected": True},
+            )
+        self.assertIn("unexpected arguments", str(ctx.exception))
