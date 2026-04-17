@@ -25,6 +25,253 @@ MUTATING_TOOLS = {
 }
 
 
+def _request_target(arguments: dict[str, Any]) -> dict[str, Any] | None:
+    target = {key: arguments[key] for key in ("node", "vmid", "type") if key in arguments}
+    return target or None
+
+
+def handle_mcp_post(
+    *,
+    config: AppConfig,
+    approval_store: ApprovalStore,
+    audit_logger: AuditLogger,
+    proxmox_api: ProxmoxApi,
+    authorization_header: str | None,
+    client_id_header: str | None,
+    tls_peer_identity,
+    raw_body: bytes,
+) -> tuple[HTTPStatus, dict[str, Any]]:
+    authn = None
+    request_id = None
+    method = None
+    tool_name = None
+    arguments: dict[str, Any] = {}
+    audit_kind = None
+    try:
+        request_body = json.loads(raw_body)
+        request_id = request_body.get("id")
+        method = request_body.get("method")
+        params = request_body.get("params", {})
+
+        authn = authenticate(
+            config,
+            authorization_header=authorization_header,
+            client_id_header=client_id_header,
+            tls_peer_identity=tls_peer_identity,
+        )
+        mode = config.remote.mode
+        if mode == "deny":
+            raise PermissionError("remote access is disabled")
+        if mode == "allow-listed" and not approval_store.is_approved(
+            authn.principal.client_id, now=datetime.now(UTC)
+        ):
+            raise PermissionError(f"client {authn.principal.client_id} is not approved")
+
+        audit_kwargs = {
+            "client_id": authn.principal.client_id,
+            "profile": authn.principal.profile,
+            "tls_client_common_name": authn.tls_peer_identity.common_name
+            if authn.tls_peer_identity
+            else None,
+            "tls_client_fingerprint_sha256": authn.tls_peer_identity.fingerprint_sha256
+            if authn.tls_peer_identity
+            else None,
+        }
+
+        if method == "initialize":
+            audit_logger.write(
+                event="mcp_request",
+                method=method,
+                tool_name=None,
+                kind="read",
+                outcome="allowed",
+                **audit_kwargs,
+            )
+            return (
+                HTTPStatus.OK,
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "protocolVersion": "2025-03-26",
+                        "serverInfo": {"name": "proxmox-mcp-server", "version": "0.1.0"},
+                        "capabilities": {"tools": {}},
+                    },
+                },
+            )
+
+        if method == "tools/list":
+            audit_logger.write(
+                event="mcp_request",
+                method=method,
+                tool_name=None,
+                kind="read",
+                outcome="allowed",
+                **audit_kwargs,
+            )
+            return (
+                HTTPStatus.OK,
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"tools": list_tools(authn.principal)},
+                },
+            )
+
+        if method == "tools/call":
+            tool_name = params.get("name")
+            arguments = params.get("arguments", {})
+            if not isinstance(tool_name, str):
+                raise ValueError("missing tool name")
+            if not isinstance(arguments, dict):
+                raise ValueError("tool arguments must be an object")
+            audit_kind = "mutating" if tool_name in MUTATING_TOOLS else "read"
+            LOG.info(
+                "tool call kind=%s client=%s profile=%s tool=%s",
+                audit_kind,
+                authn.principal.client_id,
+                authn.principal.profile,
+                tool_name,
+            )
+            result = call_tool(tool_name, arguments, authn.principal, proxmox_api)
+            audit_logger.write(
+                event="mcp_request",
+                method=method,
+                tool_name=tool_name,
+                kind=audit_kind,
+                outcome="allowed",
+                target=_request_target(arguments),
+                **audit_kwargs,
+            )
+            return (
+                HTTPStatus.OK,
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]},
+                },
+            )
+
+        if method == "ping":
+            audit_logger.write(
+                event="mcp_request",
+                method=method,
+                tool_name=None,
+                kind="read",
+                outcome="allowed",
+                **audit_kwargs,
+            )
+            return (
+                HTTPStatus.OK,
+                {"jsonrpc": "2.0", "id": request_id, "result": {}},
+            )
+
+        audit_logger.write(
+            event="mcp_request",
+            method=method,
+            tool_name=tool_name,
+            kind=audit_kind,
+            outcome="denied",
+            detail=f"method not found: {method}",
+            target=_request_target(arguments),
+            **audit_kwargs,
+        )
+        return (
+            HTTPStatus.OK,
+            {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": f"method not found: {method}"}},
+        )
+    except PermissionError as exc:
+        LOG.warning("request denied: %s", exc)
+        audit_logger.write(
+            event="mcp_request",
+            client_id=authn.principal.client_id if authn else None,
+            profile=authn.principal.profile if authn else None,
+            tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
+            tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
+            method=method,
+            tool_name=tool_name,
+            kind=audit_kind,
+            outcome="denied",
+            detail=str(exc),
+            target=_request_target(arguments),
+        )
+        return (
+            HTTPStatus.OK,
+            {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32001, "message": str(exc)}},
+        )
+    except ProxmoxApiError as exc:
+        LOG.error("proxmox api failure: %s", exc)
+        audit_logger.write(
+            event="mcp_request",
+            client_id=authn.principal.client_id if authn else None,
+            profile=authn.principal.profile if authn else None,
+            tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
+            tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
+            method=method,
+            tool_name=tool_name,
+            kind=audit_kind,
+            outcome="error",
+            detail=str(exc),
+            target=_request_target(arguments),
+        )
+        return (
+            HTTPStatus.OK,
+            {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32002, "message": str(exc)}},
+        )
+    except json.JSONDecodeError:
+        audit_logger.write(
+            event="mcp_request",
+            client_id=None,
+            profile=None,
+            tls_client_common_name=None,
+            tls_client_fingerprint_sha256=None,
+            method=method,
+            tool_name=tool_name,
+            kind=audit_kind,
+            outcome="error",
+            detail="invalid json",
+            target=None,
+        )
+        return (HTTPStatus.BAD_REQUEST, {"error": "invalid json"})
+    except ValueError as exc:
+        audit_logger.write(
+            event="mcp_request",
+            client_id=authn.principal.client_id if authn else None,
+            profile=authn.principal.profile if authn else None,
+            tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
+            tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
+            method=method,
+            tool_name=tool_name,
+            kind=audit_kind,
+            outcome="error",
+            detail=str(exc),
+            target=_request_target(arguments),
+        )
+        return (
+            HTTPStatus.OK,
+            {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": str(exc)}},
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("unhandled request failure")
+        audit_logger.write(
+            event="mcp_request",
+            client_id=authn.principal.client_id if authn else None,
+            profile=authn.principal.profile if authn else None,
+            tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
+            tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
+            method=method,
+            tool_name=tool_name,
+            kind=audit_kind,
+            outcome="error",
+            detail=str(exc),
+            target=_request_target(arguments),
+        )
+        return (
+            HTTPStatus.OK,
+            {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": str(exc)}},
+        )
+
+
 def create_server(config: AppConfig) -> ThreadingHTTPServer:
     approval_store = ApprovalStore(config.remote.approval_store)
     audit_logger = AuditLogger(config.audit.file)
@@ -40,25 +287,6 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-
-        def _json_rpc_error(self, request_id: Any, code: int, message: str) -> None:
-            self._send_json(
-                HTTPStatus.OK,
-                {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}},
-            )
-
-        def _require_remote_approval(self, client_id: str) -> None:
-            mode = config.remote.mode
-            if mode == "deny":
-                raise PermissionError("remote access is disabled")
-            if mode == "open":
-                return
-            if not approval_store.is_approved(client_id, now=datetime.now(UTC)):
-                raise PermissionError(f"client {client_id} is not approved")
-
-        def _request_target(self, arguments: dict[str, Any]) -> dict[str, Any] | None:
-            target = {key: arguments[key] for key in ("node", "vmid", "type") if key in arguments}
-            return target or None
 
         def _tls_peer_identity(self):
             getpeercert = getattr(self.connection, "getpeercert", None)
@@ -79,224 +307,19 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
                 return
 
-            authn = None
-            request_id = None
-            method = None
-            tool_name = None
-            arguments: dict[str, Any] = {}
-            audit_kind = None
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-                raw_body = self.rfile.read(length)
-                request_body = json.loads(raw_body)
-                request_id = request_body.get("id")
-                method = request_body.get("method")
-                params = request_body.get("params", {})
-
-                authn = authenticate(
-                    config,
-                    authorization_header=self.headers.get("Authorization"),
-                    client_id_header=self.headers.get("X-Client-Id"),
-                    tls_peer_identity=self._tls_peer_identity(),
-                )
-                self._require_remote_approval(authn.principal.client_id)
-
-                if method == "initialize":
-                    audit_logger.write(
-                        event="mcp_request",
-                        client_id=authn.principal.client_id,
-                        profile=authn.principal.profile,
-                        tls_client_common_name=authn.tls_peer_identity.common_name if authn.tls_peer_identity else None,
-                        tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn.tls_peer_identity else None,
-                        method=method,
-                        tool_name=None,
-                        kind="read",
-                        outcome="allowed",
-                    )
-                    self._send_json(
-                        HTTPStatus.OK,
-                        {
-                            "jsonrpc": "2.0",
-                            "id": request_id,
-                            "result": {
-                                "protocolVersion": "2025-03-26",
-                                "serverInfo": {"name": "proxmox-mcp-server", "version": "0.1.0"},
-                                "capabilities": {"tools": {}},
-                            },
-                        },
-                    )
-                    return
-
-                if method == "tools/list":
-                    audit_logger.write(
-                        event="mcp_request",
-                        client_id=authn.principal.client_id,
-                        profile=authn.principal.profile,
-                        tls_client_common_name=authn.tls_peer_identity.common_name if authn.tls_peer_identity else None,
-                        tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn.tls_peer_identity else None,
-                        method=method,
-                        tool_name=None,
-                        kind="read",
-                        outcome="allowed",
-                    )
-                    self._send_json(
-                        HTTPStatus.OK,
-                        {
-                            "jsonrpc": "2.0",
-                            "id": request_id,
-                            "result": {"tools": list_tools(authn.principal)},
-                        },
-                    )
-                    return
-
-                if method == "tools/call":
-                    tool_name = params.get("name")
-                    arguments = params.get("arguments", {})
-                    if not isinstance(tool_name, str):
-                        raise ValueError("missing tool name")
-                    if not isinstance(arguments, dict):
-                        raise ValueError("tool arguments must be an object")
-                    audit_kind = "mutating" if tool_name in MUTATING_TOOLS else "read"
-                    LOG.info(
-                        "tool call kind=%s client=%s profile=%s tool=%s",
-                        audit_kind,
-                        authn.principal.client_id,
-                        authn.principal.profile,
-                        tool_name,
-                    )
-                    result = call_tool(tool_name, arguments, authn.principal, proxmox_api)
-                    audit_logger.write(
-                        event="mcp_request",
-                        client_id=authn.principal.client_id,
-                        profile=authn.principal.profile,
-                        tls_client_common_name=authn.tls_peer_identity.common_name if authn.tls_peer_identity else None,
-                        tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn.tls_peer_identity else None,
-                        method=method,
-                        tool_name=tool_name,
-                        kind=audit_kind,
-                        outcome="allowed",
-                        target=self._request_target(arguments),
-                    )
-                    self._send_json(
-                        HTTPStatus.OK,
-                        {
-                            "jsonrpc": "2.0",
-                            "id": request_id,
-                            "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]},
-                        },
-                    )
-                    return
-
-                if method == "ping":
-                    audit_logger.write(
-                        event="mcp_request",
-                        client_id=authn.principal.client_id,
-                        profile=authn.principal.profile,
-                        tls_client_common_name=authn.tls_peer_identity.common_name if authn.tls_peer_identity else None,
-                        tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn.tls_peer_identity else None,
-                        method=method,
-                        tool_name=None,
-                        kind="read",
-                        outcome="allowed",
-                    )
-                    self._send_json(
-                        HTTPStatus.OK,
-                        {"jsonrpc": "2.0", "id": request_id, "result": {}},
-                    )
-                    return
-
-                audit_logger.write(
-                    event="mcp_request",
-                    client_id=authn.principal.client_id,
-                    profile=authn.principal.profile,
-                    tls_client_common_name=authn.tls_peer_identity.common_name if authn.tls_peer_identity else None,
-                    tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn.tls_peer_identity else None,
-                    method=method,
-                    tool_name=tool_name,
-                    kind=audit_kind,
-                    outcome="denied",
-                    detail=f"method not found: {method}",
-                    target=self._request_target(arguments),
-                )
-                self._json_rpc_error(request_id, -32601, f"method not found: {method}")
-            except PermissionError as exc:
-                LOG.warning("request denied: %s", exc)
-                audit_logger.write(
-                    event="mcp_request",
-                    client_id=authn.principal.client_id if authn else None,
-                    profile=authn.principal.profile if authn else None,
-                    tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
-                    tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
-                    method=method,
-                    tool_name=tool_name,
-                    kind=audit_kind,
-                    outcome="denied",
-                    detail=str(exc),
-                    target=self._request_target(arguments),
-                )
-                self._json_rpc_error(request_id if "request_id" in locals() else None, -32001, str(exc))
-            except ProxmoxApiError as exc:
-                LOG.error("proxmox api failure: %s", exc)
-                audit_logger.write(
-                    event="mcp_request",
-                    client_id=authn.principal.client_id if authn else None,
-                    profile=authn.principal.profile if authn else None,
-                    tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
-                    tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
-                    method=method,
-                    tool_name=tool_name,
-                    kind=audit_kind,
-                    outcome="error",
-                    detail=str(exc),
-                    target=self._request_target(arguments),
-                )
-                self._json_rpc_error(request_id if "request_id" in locals() else None, -32002, str(exc))
-            except json.JSONDecodeError:
-                audit_logger.write(
-                    event="mcp_request",
-                    client_id=None,
-                    profile=None,
-                    tls_client_common_name=None,
-                    tls_client_fingerprint_sha256=None,
-                    method=method,
-                    tool_name=tool_name,
-                    kind=audit_kind,
-                    outcome="error",
-                    detail="invalid json",
-                    target=None,
-                )
-                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid json"})
-            except ValueError as exc:
-                audit_logger.write(
-                    event="mcp_request",
-                    client_id=authn.principal.client_id if authn else None,
-                    profile=authn.principal.profile if authn else None,
-                    tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
-                    tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
-                    method=method,
-                    tool_name=tool_name,
-                    kind=audit_kind,
-                    outcome="error",
-                    detail=str(exc),
-                    target=self._request_target(arguments),
-                )
-                self._json_rpc_error(request_id if "request_id" in locals() else None, -32602, str(exc))
-            except Exception as exc:  # noqa: BLE001
-                LOG.exception("unhandled request failure")
-                audit_logger.write(
-                    event="mcp_request",
-                    client_id=authn.principal.client_id if authn else None,
-                    profile=authn.principal.profile if authn else None,
-                    tls_client_common_name=authn.tls_peer_identity.common_name if authn and authn.tls_peer_identity else None,
-                    tls_client_fingerprint_sha256=authn.tls_peer_identity.fingerprint_sha256 if authn and authn.tls_peer_identity else None,
-                    method=method,
-                    tool_name=tool_name,
-                    kind=audit_kind,
-                    outcome="error",
-                    detail=str(exc),
-                    target=self._request_target(arguments),
-                )
-                self._json_rpc_error(request_id if "request_id" in locals() else None, -32000, str(exc))
+            length = int(self.headers.get("Content-Length", "0"))
+            raw_body = self.rfile.read(length)
+            status, payload = handle_mcp_post(
+                config=config,
+                approval_store=approval_store,
+                audit_logger=audit_logger,
+                proxmox_api=proxmox_api,
+                authorization_header=self.headers.get("Authorization"),
+                client_id_header=self.headers.get("X-Client-Id"),
+                tls_peer_identity=self._tls_peer_identity(),
+                raw_body=raw_body,
+            )
+            self._send_json(status, payload)
 
         def log_message(self, fmt: str, *args: Any) -> None:
             LOG.info("%s - %s", self.address_string(), fmt % args)
