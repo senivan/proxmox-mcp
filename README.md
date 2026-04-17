@@ -98,6 +98,12 @@ Install from a checked-out repo on the host:
 sudo ./deploy/install.sh
 ```
 
+Redeploy after pulling new commits while preserving the existing config:
+
+```bash
+sudo ./deploy/redeploy.sh
+```
+
 After install:
 
 1. Edit `/etc/proxmox-mcp/config.toml`
