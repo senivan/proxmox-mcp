@@ -154,6 +154,7 @@ def load_config(path: str | Path) -> AppConfig:
     if not isinstance(ssh_targets_raw, dict):
         raise ValueError("guest_exec.ssh_targets must be a table")
     ssh_targets: dict[tuple[str, str, int], SshTargetConfig] = {}
+    ssh_target_names: dict[tuple[str, str, int], str] = {}
     for target_name, target_raw in ssh_targets_raw.items():
         if not isinstance(target_raw, dict):
             raise ValueError(f"invalid guest_exec ssh target {target_name}")
@@ -189,7 +190,15 @@ def load_config(path: str | Path) -> AppConfig:
             known_hosts_file=known_hosts_file,
             strict_host_key_checking=strict_host_key_checking,
         )
-        ssh_targets[(ssh_target.node, ssh_target.type, ssh_target.vmid)] = ssh_target
+        logical_key = (ssh_target.node, ssh_target.type, ssh_target.vmid)
+        if logical_key in ssh_targets:
+            previous_name = ssh_target_names[logical_key]
+            raise ValueError(
+                "duplicate guest_exec ssh target for "
+                f"{logical_key}: {previous_name} and {target_name}"
+            )
+        ssh_targets[logical_key] = ssh_target
+        ssh_target_names[logical_key] = target_name
 
     profiles: dict[str, set[str]] = {}
     for profile_name, profile_data in profiles_raw.items():
