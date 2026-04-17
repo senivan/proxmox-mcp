@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import timedelta
 import logging
+from pathlib import Path
 import sys
 
 from proxmox_mcp.approval_store import ApprovalStore
@@ -48,10 +49,39 @@ def build_admin_parser() -> argparse.ArgumentParser:
     mode_parser.add_argument("value", choices=sorted(VALID_REMOTE_MODES))
 
     subparsers.add_parser("list")
-    subparsers.add_parser("validate-config")
+    validate_parser = subparsers.add_parser("validate-config")
+    validate_parser.add_argument(
+        "--check-paths",
+        action="store_true",
+        help="Also verify deployed file paths and parent directories exist",
+    )
     subparsers.add_parser("show-mode")
     subparsers.add_parser("show-clients")
     return parser
+
+
+def _validate_deployment_paths(config_path: str) -> None:
+    config_file = Path(config_path).resolve()
+    if not config_file.is_file():
+        raise ValueError(f"config file does not exist: {config_file}")
+
+    config = load_config(config_file)
+
+    audit_dir = config.audit.file.parent
+    if not audit_dir.is_dir():
+        raise ValueError(f"audit directory does not exist: {audit_dir}")
+
+    approvals_dir = config.remote.approval_store.parent
+    if not approvals_dir.is_dir():
+        raise ValueError(f"approval store directory does not exist: {approvals_dir}")
+
+    if config.tls.enabled:
+        if not config.tls.cert_file.is_file():
+            raise ValueError(f"tls cert file does not exist: {config.tls.cert_file}")
+        if not config.tls.key_file.is_file():
+            raise ValueError(f"tls key file does not exist: {config.tls.key_file}")
+        if config.tls.client_ca_file and not config.tls.client_ca_file.is_file():
+            raise ValueError(f"tls client ca file does not exist: {config.tls.client_ca_file}")
 
 
 def run_server(argv: list[str] | None = None) -> int:
@@ -103,6 +133,8 @@ def run_admin(argv: list[str] | None = None) -> int:
     store = ApprovalStore(config.remote.approval_store)
 
     if args.command == "validate-config":
+        if args.check_paths:
+            _validate_deployment_paths(args.config)
         print(f"config ok: {args.config}")
         return 0
 
