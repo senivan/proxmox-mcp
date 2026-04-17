@@ -48,6 +48,16 @@ def require_vm_type(arguments: dict) -> str:
     return vm_type
 
 
+def require_upid(arguments: dict) -> str:
+    upid = require_string(arguments, "upid")
+    if not upid.startswith("UPID:"):
+        raise ValueError("upid must start with 'UPID:'")
+    parts = upid.split(":")
+    if len(parts) < 3 or not parts[1].strip():
+        raise ValueError("upid must include a node segment")
+    return upid
+
+
 def require_string_list(arguments: dict, key: str) -> list[str]:
     value = arguments.get(key)
     if not isinstance(value, list) or not value:
@@ -82,7 +92,7 @@ def validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
         return {"limit": optional_int(arguments, "limit", default=25, minimum=1, maximum=100)}
     if tool_name == "proxmox.task.get":
         _ensure_only_keys(arguments, {"upid"})
-        return {"upid": require_string(arguments, "upid")}
+        return {"upid": require_upid(arguments)}
     if tool_name == "proxmox.storage.list":
         _ensure_only_keys(arguments, set())
         return {}

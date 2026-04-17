@@ -35,3 +35,10 @@ class ApprovalStoreTests(unittest.TestCase):
             parsed = json.loads(path.read_text(encoding="utf-8"))
             self.assertIn("approvals", parsed)
             self.assertIn("ops-laptop", parsed["approvals"])
+
+    def test_corrupted_store_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "approvals.json"
+            path.write_text("{", encoding="utf-8")
+            store = ApprovalStore(path)
+            self.assertFalse(store.is_approved("ops-laptop"))

@@ -3,8 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import json
+import logging
 import os
 from pathlib import Path
+
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -28,8 +32,12 @@ class ApprovalStore:
     def _read_raw(self) -> dict:
         if not self.path.exists():
             return {"approvals": {}}
-        with self.path.open("r", encoding="utf-8") as fh:
-            return json.load(fh)
+        try:
+            with self.path.open("r", encoding="utf-8") as fh:
+                return json.load(fh)
+        except json.JSONDecodeError:
+            LOG.warning("approval store is corrupted; treating as empty")
+            return {"approvals": {}}
 
     def _write_raw(self, raw: dict) -> None:
         self._ensure_parent()

@@ -27,6 +27,7 @@ MUTATING_TOOLS = {
     "proxmox.vm.snapshot.delete",
     "proxmox.vm.guest.exec",
 }
+MAX_REQUEST_BODY_BYTES = 1_048_576
 
 
 def _request_target(arguments: dict[str, Any]) -> dict[str, Any] | None:
@@ -53,7 +54,14 @@ def handle_mcp_post(
     arguments: dict[str, Any] = {}
     audit_kind = None
     try:
+        if len(raw_body) > MAX_REQUEST_BODY_BYTES:
+            return (
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                {"error": "request body too large"},
+            )
         request_body = json.loads(raw_body)
+        if not isinstance(request_body, dict):
+            raise ValueError("request body must be a JSON object")
         request_id = request_body.get("id")
         method = request_body.get("method")
         params = request_body.get("params", {})
@@ -319,7 +327,18 @@ def create_server(config: AppConfig) -> ThreadingHTTPServer:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
                 return
 
-            length = int(self.headers.get("Content-Length", "0"))
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid content-length"})
+                return
+            if length < 0:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid content-length"})
+                return
+            if length > MAX_REQUEST_BODY_BYTES:
+                self._send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "request body too large"})
+                return
+
             raw_body = self.rfile.read(length)
             status, payload = handle_mcp_post(
                 config=config,
