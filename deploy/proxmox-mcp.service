@@ -1,0 +1,21 @@
+[Unit]
+Description=Proxmox MCP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/proxmox-mcp-server
+ExecStart=/opt/proxmox-mcp-server/.venv/bin/proxmox-mcp-server --config /etc/proxmox-mcp/config.toml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/proxmox-mcp /var/lib/proxmox-mcp
+
+[Install]
+WantedBy=multi-user.target

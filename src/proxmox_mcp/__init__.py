@@ -1,0 +1,1 @@
+"""Proxmox MCP server package."""
