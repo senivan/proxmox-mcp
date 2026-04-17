@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import json
-from pathlib import Path
 import subprocess
 import time
 
@@ -10,11 +9,16 @@ from proxmox_mcp.config import AppConfig, SshTargetConfig
 from proxmox_mcp.proxmox_api import ProxmoxApiError
 
 
-def _truncate_output(data: bytes, max_output_bytes: int) -> tuple[str, bool]:
-    truncated = len(data) > max_output_bytes
+def _output_payload(data: bytes, max_output_bytes: int) -> dict[str, object]:
+    original_bytes = len(data)
+    truncated = original_bytes > max_output_bytes
     if truncated:
         data = data[:max_output_bytes]
-    return data.decode("utf-8", errors="replace"), truncated
+    return {
+        "text": data.decode("utf-8", errors="replace"),
+        "truncated": truncated,
+        "original_bytes": original_bytes,
+    }
 
 
 def _decode_agent_output(value: str | None) -> bytes:
@@ -46,6 +50,7 @@ def _run_process(
     argv: list[str],
     *,
     timeout_seconds: int,
+    backend_name: str,
     runner=subprocess.run,
 ) -> subprocess.CompletedProcess:
     try:
@@ -57,9 +62,13 @@ def _run_process(
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
-        raise ProxmoxApiError(f"guest exec timed out after {timeout_seconds}s") from exc
+        raise ProxmoxApiError(
+            f"guest exec via {backend_name} timed out after {timeout_seconds}s"
+        ) from exc
     except OSError as exc:
-        raise ProxmoxApiError(f"guest exec backend failed to start: {exc}") from exc
+        raise ProxmoxApiError(
+            f"guest exec via {backend_name} failed to start: {exc}"
+        ) from exc
 
 
 def _ssh_command(target: SshTargetConfig, argv: list[str]) -> list[str]:
@@ -81,6 +90,27 @@ def _ssh_command(target: SshTargetConfig, argv: list[str]) -> list[str]:
     cmd.append(f"{user}@{host}")
     cmd.extend(argv)
     return cmd
+
+
+def _result_payload(
+    *,
+    exit_code: int,
+    stdout_bytes: bytes,
+    stderr_bytes: bytes,
+    max_output_bytes: int,
+) -> dict[str, object]:
+    stdout = _output_payload(stdout_bytes, max_output_bytes)
+    stderr = _output_payload(stderr_bytes, max_output_bytes)
+    return {
+        "exit_code": exit_code,
+        "stdout": stdout["text"],
+        "stderr": stderr["text"],
+        "stdout_truncated": stdout["truncated"],
+        "stderr_truncated": stderr["truncated"],
+        "stdout_original_bytes": stdout["original_bytes"],
+        "stderr_original_bytes": stderr["original_bytes"],
+        "max_output_bytes": max_output_bytes,
+    }
 
 
 class GuestExecService:
@@ -121,7 +151,10 @@ class GuestExecService:
                     raise
                 target = self.config.guest_exec.ssh_targets.get((node, vm_type, vmid))
                 if target is None:
-                    raise
+                    raise ProxmoxApiError(
+                        "qemu guest agent is unavailable for "
+                        f"{node}/{vmid} and no ssh fallback is configured"
+                    ) from exc
                 return self._exec_ssh(
                     target=target,
                     node=node,
@@ -131,7 +164,9 @@ class GuestExecService:
                     timeout_seconds=timeout,
                     reason="guest-agent-unavailable",
                 )
-        raise ProxmoxApiError(f"unsupported guest exec type: {vm_type}")
+        raise ProxmoxApiError(
+            f"unsupported guest exec type: {vm_type} (expected qemu or lxc)"
+        )
 
     def _exec_lxc(
         self, *, node: str, vmid: int, argv: list[str], timeout_seconds: int
@@ -141,28 +176,31 @@ class GuestExecService:
             remote_node = _validate_ssh_destination_component(node, field_name="node")
             cmd = ["ssh", remote_node, "pct", "exec", str(vmid), "--", *argv]
             backend = "pct-ssh"
+            backend_reason = f"target node {node} differs from local node {local_node}"
         else:
             cmd = ["pct", "exec", str(vmid), "--", *argv]
             backend = "pct"
-        result = _run_process(cmd, timeout_seconds=timeout_seconds, runner=self.runner)
-        stdout, stdout_truncated = _truncate_output(
-            result.stdout, self.config.guest_exec.max_output_bytes
+            backend_reason = None
+        result = _run_process(
+            cmd,
+            timeout_seconds=timeout_seconds,
+            backend_name=backend,
+            runner=self.runner,
         )
-        stderr, stderr_truncated = _truncate_output(
-            result.stderr, self.config.guest_exec.max_output_bytes
-        )
-        return {
+        payload = {
             "backend": backend,
             "target": {"node": node, "vmid": vmid, "type": "lxc"},
             "command": {"argv": argv, "timeout_seconds": timeout_seconds},
-            "result": {
-                "exit_code": result.returncode,
-                "stdout": stdout,
-                "stderr": stderr,
-                "stdout_truncated": stdout_truncated,
-                "stderr_truncated": stderr_truncated,
-            },
+            "result": _result_payload(
+                exit_code=result.returncode,
+                stdout_bytes=result.stdout,
+                stderr_bytes=result.stderr,
+                max_output_bytes=self.config.guest_exec.max_output_bytes,
+            ),
         }
+        if backend_reason is not None:
+            payload["backend_reason"] = backend_reason
+        return payload
 
     def _exec_ssh(
         self,
@@ -178,26 +216,20 @@ class GuestExecService:
         result = _run_process(
             _ssh_command(target, argv),
             timeout_seconds=timeout_seconds,
+            backend_name="ssh",
             runner=self.runner,
-        )
-        stdout, stdout_truncated = _truncate_output(
-            result.stdout, self.config.guest_exec.max_output_bytes
-        )
-        stderr, stderr_truncated = _truncate_output(
-            result.stderr, self.config.guest_exec.max_output_bytes
         )
         return {
             "backend": "ssh",
             "backend_reason": reason,
             "target": {"node": node, "vmid": vmid, "type": vm_type},
             "command": {"argv": argv, "timeout_seconds": timeout_seconds},
-            "result": {
-                "exit_code": result.returncode,
-                "stdout": stdout,
-                "stderr": stderr,
-                "stdout_truncated": stdout_truncated,
-                "stderr_truncated": stderr_truncated,
-            },
+            "result": _result_payload(
+                exit_code=result.returncode,
+                stdout_bytes=result.stdout,
+                stderr_bytes=result.stderr,
+                max_output_bytes=self.config.guest_exec.max_output_bytes,
+            ),
         }
 
     def _exec_qemu_guest_agent(
@@ -217,13 +249,21 @@ class GuestExecService:
         ]
         for arg in argv:
             create_cmd += ["--command", arg]
-        create_result = _run_process(create_cmd, timeout_seconds=10, runner=self.runner)
+        create_result = _run_process(
+            create_cmd,
+            timeout_seconds=10,
+            backend_name="qemu-guest-agent-create",
+            runner=self.runner,
+        )
         if create_result.returncode != 0:
             stderr = create_result.stderr.decode("utf-8", errors="replace").strip()
             stdout = create_result.stdout.decode("utf-8", errors="replace").strip()
             detail = stderr or stdout or "unknown pvesh error"
             raise ProxmoxApiError(detail)
-        payload = json.loads(create_result.stdout.decode("utf-8"))
+        try:
+            payload = json.loads(create_result.stdout.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ProxmoxApiError("invalid qemu guest agent create response") from exc
         pid = payload["pid"] if isinstance(payload, dict) else int(payload)
         deadline = time.monotonic() + timeout_seconds
         while True:
@@ -236,33 +276,32 @@ class GuestExecService:
                 "--output-format",
                 "json",
             ]
-            status_result = _run_process(status_cmd, timeout_seconds=10, runner=self.runner)
+            status_result = _run_process(
+                status_cmd,
+                timeout_seconds=10,
+                backend_name="qemu-guest-agent-status",
+                runner=self.runner,
+            )
             if status_result.returncode != 0:
                 stderr = status_result.stderr.decode("utf-8", errors="replace").strip()
                 stdout = status_result.stdout.decode("utf-8", errors="replace").strip()
                 detail = stderr or stdout or "unknown pvesh error"
                 raise ProxmoxApiError(detail)
-            status_payload = json.loads(status_result.stdout.decode("utf-8"))
+            try:
+                status_payload = json.loads(status_result.stdout.decode("utf-8"))
+            except json.JSONDecodeError as exc:
+                raise ProxmoxApiError("invalid qemu guest agent status response") from exc
             if status_payload.get("exited"):
-                stdout, stdout_truncated = _truncate_output(
-                    _decode_agent_output(status_payload.get("out-data")),
-                    self.config.guest_exec.max_output_bytes,
-                )
-                stderr, stderr_truncated = _truncate_output(
-                    _decode_agent_output(status_payload.get("err-data")),
-                    self.config.guest_exec.max_output_bytes,
-                )
                 return {
                     "backend": "qemu-guest-agent",
                     "target": {"node": node, "vmid": vmid, "type": "qemu"},
                     "command": {"argv": argv, "timeout_seconds": timeout_seconds},
-                    "result": {
-                        "exit_code": int(status_payload.get("exitcode", 0)),
-                        "stdout": stdout,
-                        "stderr": stderr,
-                        "stdout_truncated": stdout_truncated,
-                        "stderr_truncated": stderr_truncated,
-                    },
+                    "result": _result_payload(
+                        exit_code=int(status_payload.get("exitcode", 0)),
+                        stdout_bytes=_decode_agent_output(status_payload.get("out-data")),
+                        stderr_bytes=_decode_agent_output(status_payload.get("err-data")),
+                        max_output_bytes=self.config.guest_exec.max_output_bytes,
+                    ),
                 }
             if time.monotonic() >= deadline:
                 raise ProxmoxApiError(f"guest exec timed out after {timeout_seconds}s")
