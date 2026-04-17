@@ -44,7 +44,7 @@ tests/
 
 1. Create a config:
 
-Use [config.toml](/Users/ivansen/proxmox-mcp-server/examples/config.toml) as the starting point.
+   Use [examples/config.toml](examples/config.toml) as the starting point.
 
 2. Allow a client:
 
