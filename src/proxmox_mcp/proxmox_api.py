@@ -119,7 +119,7 @@ class ProxmoxApi:
     def vm_action(self, *, node: str, vmid: int, vm_type: str, action: str) -> dict:
         if vm_type not in {"qemu", "lxc"}:
             raise ProxmoxApiError(f"unsupported vm type: {vm_type}")
-        if action not in {"start", "shutdown", "stop"}:
+        if action not in {"start", "reboot", "shutdown", "stop"}:
             raise ProxmoxApiError(f"unsupported vm action: {action}")
         data = self.post(f"/nodes/{node}/{vm_type}/{vmid}/status/{action}")
         return {

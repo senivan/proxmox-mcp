@@ -19,6 +19,7 @@ from proxmox_mcp.tools import call_tool, list_tools
 LOG = logging.getLogger(__name__)
 MUTATING_TOOLS = {
     "proxmox.vm.start",
+    "proxmox.vm.reboot",
     "proxmox.vm.shutdown",
     "proxmox.vm.stop",
 }

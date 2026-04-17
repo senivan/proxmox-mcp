@@ -110,6 +110,20 @@ def list_tools(principal=None) -> list[dict]:
             },
         },
         {
+            "name": "proxmox.vm.reboot",
+            "description": "Reboot a Proxmox VM or container",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "node": {"type": "string", "minLength": 1},
+                    "vmid": {"type": "integer", "minimum": 1},
+                    "type": {"type": "string", "enum": ["qemu", "lxc"]},
+                },
+                "required": ["node", "vmid", "type"],
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "proxmox.vm.stop",
             "description": "Force stop a Proxmox VM or container",
             "inputSchema": {
@@ -175,6 +189,13 @@ def call_tool(tool_name: str, arguments: dict, principal, api: ProxmoxApi) -> di
             vmid=validated["vmid"],
             vm_type=validated["type"],
             action="start",
+        )
+    if tool_name == "proxmox.vm.reboot":
+        return api.vm_action(
+            node=validated["node"],
+            vmid=validated["vmid"],
+            vm_type=validated["type"],
+            action="reboot",
         )
     if tool_name == "proxmox.vm.shutdown":
         return api.vm_action(

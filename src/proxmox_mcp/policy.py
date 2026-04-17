@@ -13,6 +13,7 @@ TOOL_CAPABILITIES = {
     "proxmox.storage.list": {"inventory.read", "storage.read"},
     "proxmox.storage.get": {"storage.read"},
     "proxmox.vm.start": {"vm.power"},
+    "proxmox.vm.reboot": {"vm.power"},
     "proxmox.vm.shutdown": {"vm.power"},
     "proxmox.vm.stop": {"vm.power"},
 }

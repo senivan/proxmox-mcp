@@ -43,6 +43,7 @@ class PolicyTests(unittest.TestCase):
             capabilities={"vm.power"},
         )
         require_tool_access(principal, "proxmox.vm.start")
+        require_tool_access(principal, "proxmox.vm.reboot")
         require_tool_access(principal, "proxmox.vm.shutdown")
         require_tool_access(principal, "proxmox.vm.stop")
 
@@ -54,6 +55,7 @@ class PolicyTests(unittest.TestCase):
         )
         tool_names = {tool["name"] for tool in list_tools(principal)}
         self.assertNotIn("proxmox.vm.start", tool_names)
+        self.assertNotIn("proxmox.vm.reboot", tool_names)
         self.assertNotIn("proxmox.vm.shutdown", tool_names)
         self.assertNotIn("proxmox.vm.stop", tool_names)
 

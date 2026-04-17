@@ -80,7 +80,12 @@ def validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
             "node": require_string(arguments, "node"),
             "storage": require_string(arguments, "storage"),
         }
-    if tool_name in {"proxmox.vm.start", "proxmox.vm.shutdown", "proxmox.vm.stop"}:
+    if tool_name in {
+        "proxmox.vm.start",
+        "proxmox.vm.reboot",
+        "proxmox.vm.shutdown",
+        "proxmox.vm.stop",
+    }:
         _ensure_only_keys(arguments, {"node", "vmid", "type"})
         return {
             "node": require_string(arguments, "node"),
