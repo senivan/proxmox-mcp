@@ -55,11 +55,18 @@ class ApprovalStore:
         result: list[ApprovalRecord] = []
         for client_id, entry in approvals.items():
             expires_at = entry.get("expires_at")
-            parsed = (
-                datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-                if isinstance(expires_at, str)
-                else None
-            )
+            try:
+                parsed = (
+                    datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                    if isinstance(expires_at, str)
+                    else None
+                )
+            except ValueError:
+                LOG.warning(
+                    "approval entry for %s has invalid expires_at; treating as inactive",
+                    client_id,
+                )
+                continue
             result.append(ApprovalRecord(client_id=client_id, expires_at=parsed))
         return sorted(result, key=lambda item: item.client_id)
 
